@@ -16,7 +16,7 @@ export default function Viewport({state,callbacks,onEngine}:{state:EngineState;c
       try{
         const instance=new HabitatEngine(container.current,{
           onPick:p=>latest.current.callbacks.onPick(p),onHover:p=>latest.current.callbacks.onHover(p),
-          onLock:v=>latest.current.callbacks.onLock(v),onError:m=>latest.current.callbacks.onError(m),onPosition:p=>latest.current.callbacks.onPosition(p),
+          onLook:v=>latest.current.callbacks.onLook(v),onError:m=>latest.current.callbacks.onError(m),onPosition:p=>latest.current.callbacks.onPosition(p),
         });
         engine.current=instance;instance.update(latest.current.state);latest.current.onEngine(instance);setReady(true);
       }catch{setError('Não foi possível iniciar o 3D. Ative a aceleração de hardware do navegador e tente novamente.');}

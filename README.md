@@ -17,7 +17,8 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 - A generated residential building with two apartments per floor, room partitions, furniture, stairs, and a roof.
 - First-person exploration with wall/furniture collision and traversable stairs.
 - Undo/redo, browser-local autosave, validated JSON import/export.
-- Pointer-lock mouse look, keyboard look, and touch movement controls.
+- Click-and-drag mouse look, keyboard look, and touch movement controls. Releasing the left mouse button immediately stops turning; the cursor stays available.
+- A compact walking-mode mouse sensitivity slider (25–200%), remembered in the current browser.
 - Automatic lightweight SVG compatibility rendering when WebGL is unavailable. WebGL is the preferred renderer.
 
 ## Run locally
@@ -49,7 +50,7 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 4. Choose a furniture/appliance item and click the floor. Press **R** to rotate before placement.
 5. Select an object to change its meter coordinates, dimensions, color, name, or apartment.
 6. Use the floors panel to add, duplicate, or select a floor. **Gerar prédio** creates one to eight furnished floors.
-7. Switch to **Caminhar** to enter the active floor or selected room. Use **WASD**, **Shift**, the mouse, or arrow keys. Stairs connect floors; the floor buttons provide direct access.
+7. Switch to **Caminhar** to enter the active floor or selected room. Use **WASD** to walk and **Shift** to move faster. Hold the left mouse button and drag to look; release it to stop turning. Arrow keys also look around. Adjust **Sensibilidade** in the lower-right corner (25–200%). Stairs connect floors; the floor buttons provide direct access.
 8. Use **Exportar** to back up the project or move it to another browser.
 
 | Shortcut | Action |
@@ -60,7 +61,7 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 | Ctrl/Cmd + Z | Undo |
 | Ctrl/Cmd + Shift + Z | Redo |
 | Ctrl/Cmd + S | Save in the current browser |
-| Esc | Cancel drawing / release mouse |
+| Esc | Cancel drawing / stop camera drag |
 | WASD | Walk |
 | Shift | Walk faster |
 | Arrow keys | Look around in walking mode |
@@ -70,9 +71,11 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 - `lib/habitat/domain.ts`: versioned document schema, generators, hosted openings, collision, movement and floor support. Independent of rendering and React.
 - `lib/habitat/models.ts`: procedural 3D geometry and material/resource lifecycle.
 - `lib/habitat/engine.ts`: cameras, orbit and walking controls, picking, previews and renderers.
+- `lib/habitat/walk-controls.ts`: primary-pointer drag ownership and normalized mouse/touch sensitivity.
 - `components/habitat/Studio.tsx`: editor actions, history, property panels and persistence.
 - `components/habitat/Viewport.tsx`: client-side renderer lifecycle and graceful failure handling.
 - `tests/domain.test.mjs`: meaningful regression coverage for geometry references, collision, stairs, imports, and floor cloning.
+- `tests/walk-controls.test.mjs`: regression coverage for mouse hover/release, pointer ownership, cancellation, sensitivity, and touch look.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
 

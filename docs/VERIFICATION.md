@@ -6,6 +6,8 @@ Eight domain regression tests pass: building generation and JSON round-trip; rot
 
 TypeScript checking and ESLint pass for the application, editor and engine.
 
+Five walking-input regression tests also cover: no turning on hover or after release; primary-left-button ownership; cancellation and a fresh drag origin; live sensitivity changes and validation; and touch release.
+
 ## Browser
 
 Verified on the desktop internal preview:
@@ -19,9 +21,13 @@ Verified on the desktop internal preview:
 - Direction buttons move the player; the visible coordinates update.
 - Direct access to the upper floor sets the player's feet to 3.20 m.
 - Browser-local autosave displays its saved state.
+- Walking camera turns during a primary-button drag, then stays unchanged after release and cursor repositioning with a click. Verified against the rendered SVG geometry.
+- The sensitivity slider changes between 25% and 200%; a 50% setting survives page reload and re-entering walking mode.
+
+![Walking camera and sensitivity control](walk-controls.jpg)
 
 ## Scope of verification
 
-The test browser has WebGL disabled. Visual and UI checks therefore exercised the real SVG compatibility renderer; hardware-accelerated WebGL rendering remains to be checked on a GPU-enabled browser. Pointer-lock mouse look and held-key/touch input require interactive verification. The standard desktop preview does not offer a viewport-resize capability, so mobile layout was reviewed in source only.
+The test browser has WebGL disabled. Visual and UI checks therefore exercised the real SVG compatibility renderer; hardware-accelerated WebGL rendering remains to be checked on a GPU-enabled browser. Held-key/touch input requires interactive verification. The standard desktop preview does not offer a viewport-resize capability, so mobile layout was reviewed in source only. Mouse look now uses primary-button drag rather than pointer lock; input ownership and sensitivity are covered by automated tests.
 
 The test context did not expose registered WebMCP tools. The optional bridge is feature-detected, but its registration/runtime integration could not be verified here. JSON structure/round-trip validation is automated; browser download/import permission handling still requires manual verification.

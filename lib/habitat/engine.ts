@@ -3,10 +3,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SVGRenderer, SVGObject } from 'three/addons/renderers/SVGRenderer.js';
 import { makeModel, disposeObject } from './models';
 import { catalogFor, findSpawn, movePlayer, type Entity, type Kind, type Project, type Tool, type View } from './domain';
+import { WalkLook } from './walk-controls';
 
-export interface EngineState {project:Project;floorId:string;view:View;isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number}
+export interface EngineState {project:Project;floorId:string;view:View;isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number}
 export interface Pick {point:{x:number;z:number};entityId:string|null}
-export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLock:(locked:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void}
+export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void}
 
 export class HabitatEngine {
   readonly renderer:THREE.WebGLRenderer|SVGRenderer;
@@ -20,7 +21,7 @@ export class HabitatEngine {
   private selection=new THREE.Box3Helper(new THREE.Box3(),new THREE.Color('#3b8f64'));
   private raycaster=new THREE.Raycaster();private mouse=new THREE.Vector2();private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
   private resizeObserver:ResizeObserver;private frame=0;private lastTime=0;private lastPositionUpdate=0;private lastRender=0;
-  private keys=new Set<string>();private touchMove={forward:0,right:0};private pointerStart={x:0,y:0};private dragging=false;
+  private keys=new Set<string>();private touchMove={forward:0,right:0};private pointerStart={x:0,y:0};private look=new WalkLook();
   private state:EngineState|null=null;private objects=new Map<string,THREE.Group>();
   private player={x:0,z:-9,feet:0};private yaw=0;private pitch=0;private stopped=false;private dirty=true;
   private listeners:{target:EventTarget;name:string;fn:EventListener}[]=[];
@@ -45,14 +46,24 @@ export class HabitatEngine {
     this.camera.position.set(17,18,22);this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.target.set(0,0,0);this.controls.enableDamping=true;this.controls.dampingFactor=.1;this.controls.maxPolarAngle=Math.PI/2-.02;this.controls.minDistance=2;this.controls.maxDistance=110;
     this.planCamera.position.set(0,80,0);this.planCamera.up.set(0,0,-1);this.planCamera.lookAt(0,0,0);this.planControls=new OrbitControls(this.planCamera,this.renderer.domElement);this.planControls.enableRotate=false;this.planControls.enableDamping=true;this.planControls.enabled=false;this.planControls.minZoom=.3;this.planControls.maxZoom=12;
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(host);this.resize();
-    this.listen(this.renderer.domElement,'pointerdown',e=>{const event=e as PointerEvent;this.pointerStart={x:event.clientX,y:event.clientY};this.dragging=true;if(this.state?.view==='walk'&&event.pointerType!=='touch')this.lock();});
-    this.listen(this.renderer.domElement,'pointerup',e=>this.pick(e as PointerEvent));
+    this.listen(this.renderer.domElement,'pointerdown',e=>{
+      const event=e as PointerEvent;
+      if(this.state?.view==='walk'){
+        if(this.look.begin(event)){
+          event.preventDefault();this.renderer.domElement.focus({preventScroll:true});
+          this.renderer.domElement.setPointerCapture(event.pointerId);this.renderer.domElement.style.cursor='grabbing';this.callbacks.onLook(true);
+        }
+        return;
+      }
+      this.pointerStart={x:event.clientX,y:event.clientY};
+    });
+    this.listen(this.renderer.domElement,'pointerup',e=>{const event=e as PointerEvent;this.endLook(event.pointerId);this.pick(event);});
+    this.listen(this.renderer.domElement,'pointercancel',e=>this.endLook((e as PointerEvent).pointerId));
+    this.listen(this.renderer.domElement,'lostpointercapture',e=>this.endLook((e as PointerEvent).pointerId));
     this.listen(this.renderer.domElement,'pointermove',e=>this.hover(e as PointerEvent));
     this.listen(document,'keydown',e=>this.key(e as KeyboardEvent,true));this.listen(document,'keyup',e=>this.key(e as KeyboardEvent,false));
-    this.listen(window,'blur',()=>{this.keys.clear();this.touchMove={forward:0,right:0};});
-    this.listen(document,'mousemove',e=>{if(document.pointerLockElement===this.renderer.domElement){const m=e as MouseEvent;this.yaw-=m.movementX*.002;this.pitch=Math.max(-1.3,Math.min(1.3,this.pitch-m.movementY*.002));}});
-    this.listen(document,'pointerlockchange',()=>{this.keys.clear();this.callbacks.onLock(document.pointerLockElement===this.renderer.domElement);});
-    this.listen(document,'pointerlockerror',()=>this.callbacks.onError('O navegador bloqueou o mouse. Use as setas para olhar ou tente clicar no cenário.'));
+    this.listen(window,'blur',()=>{this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();});
+    this.listen(document,'visibilitychange',()=>{if(document.hidden){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();}});
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
   private listen(target:EventTarget,name:string,fn:EventListener){target.addEventListener(name,fn);this.listeners.push({target,name,fn});}
@@ -68,11 +79,11 @@ export class HabitatEngine {
     this.grid.visible=next.grid&&next.view!=='walk';this.grid.position.y=elevation+.012;
     if(renderChanged)this.rebuild();
     this.controls.enabled=next.view==='3d'&&next.tool==='select';this.planControls.enabled=next.view==='plan'&&next.tool==='select';
-    this.renderer.domElement.style.cursor=next.view==='walk'?'default':next.tool==='select'?'grab':'crosshair';
+    this.renderer.domElement.style.cursor=next.view==='walk'?(this.look.pointerId!==null?'grabbing':'grab'):next.tool==='select'?'grab':'crosshair';
     if(previous?.view!==next.view){
-      this.keys.clear();this.touchMove={forward:0,right:0};
+      this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();
       if(next.view==='walk'){this.player=findSpawn(next.project,next.floorId,next.selectedId??undefined);this.yaw=Math.PI;this.pitch=0;this.callbacks.onPosition(this.player);}
-      else{if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();if(previous?.view==='walk')this.home();}
+      else{if(previous?.view==='walk')this.home();}
     }
     if(previous?.floorId!==next.floorId){
       if(next.view==='walk'){this.player=findSpawn(next.project,next.floorId);this.callbacks.onPosition(this.player);}
@@ -122,14 +133,17 @@ export class HabitatEngine {
     return {point:{x:point.x,z:point.z},entityId:object?.object.userData.entityId??null};
   }
   private pick(event:PointerEvent){
-    if(this.state?.view==='walk'){this.dragging=false;return;}this.dragging=false;
+    if(this.state?.view==='walk')return;
     if(event.button!==0||Math.hypot(event.clientX-this.pointerStart.x,event.clientY-this.pointerStart.y)>5)return;
     const pick=this.hit(event);if(pick&&Math.abs(pick.point.x)<150&&Math.abs(pick.point.z)<150){this.callbacks.onPick(pick);this.renderer.domElement.focus();}
   }
   private hover(event:PointerEvent){
     if(!this.state)return;
     if(this.state.view==='walk'){
-      if(event.pointerType==='touch'&&this.dragging){this.yaw-=(event.clientX-this.pointerStart.x)*.004;this.pitch=Math.max(-1.3,Math.min(1.3,this.pitch-(event.clientY-this.pointerStart.y)*.004));this.pointerStart={x:event.clientX,y:event.clientY};}return;
+      if(this.look.pointerId===event.pointerId&&event.pointerType!=='touch'&&!(event.buttons&1)){this.endLook(event.pointerId);return;}
+      const delta=this.look.move(event,this.state.lookSensitivity);
+      if(delta){this.yaw-=delta.yaw;this.pitch=Math.max(-1.3,Math.min(1.3,this.pitch-delta.pitch));this.dirty=true;}
+      return;
     }
     const pick=this.hit(event);if(!pick)return;this.callbacks.onHover(pick.point);
     if(this.state.tool==='select')return;
@@ -155,6 +169,7 @@ export class HabitatEngine {
     const target=event.target as HTMLElement;
     if(target.closest('input,textarea,select,[role="dialog"],[role="combobox"],[contenteditable="true"]'))return;
     if(this.state?.view!=='walk')return;
+    if(event.code==='Escape'&&down){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();return;}
     if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(event.code)){event.preventDefault();if(down)this.keys.add(event.code);else this.keys.delete(event.code);}
   }
   private animate(time:number){
@@ -174,7 +189,12 @@ export class HabitatEngine {
     if(!this.software||(this.dirty&&time-this.lastRender>66)){this.renderer.render(this.scene,this.activeCamera);this.lastRender=time;this.dirty=false;}
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
-  lock(){if(this.state?.view!=='walk')return;try{const result=this.renderer.domElement.requestPointerLock();if(result?.catch)result.catch(()=>this.callbacks.onError('Mouse indisponível. Você pode andar com WASD e olhar com as setas.'));}catch{this.callbacks.onError('Use WASD para andar e as setas para olhar.');}}
+  private endLook(pointerId?:number){
+    const active=this.look.pointerId;
+    if(!this.look.end(pointerId))return;
+    if(active!==null&&this.renderer.domElement.hasPointerCapture(active))this.renderer.domElement.releasePointerCapture(active);
+    this.renderer.domElement.style.cursor=this.state?.view==='walk'?'grab':this.state?.tool==='select'?'grab':'crosshair';this.callbacks.onLook(false);
+  }
   setTouchMove(forward:number,right:number){this.touchMove={forward,right};}
   step(forward:number,right:number){
     if(this.state?.view!=='walk')return;
@@ -189,5 +209,5 @@ export class HabitatEngine {
   }
   zoom(direction:number){this.dirty=true;if(this.state?.view==='plan'){this.planCamera.zoom=Math.max(.3,Math.min(12,this.planCamera.zoom*(direction>0?1.25:.8)));this.planCamera.updateProjectionMatrix();}else if(this.state?.view!=='walk'){const vec=this.camera.position.clone().sub(this.controls.target);vec.multiplyScalar(direction>0?.8:1.25);this.camera.position.copy(this.controls.target).add(vec);this.controls.update();}}
   focus(id:string){this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
-  dispose(){this.stopped=true;cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn} of this.listeners)target.removeEventListener(name,fn);if(document.pointerLockElement===this.renderer.domElement)document.exitPointerLock();this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();}
+  dispose(){this.stopped=true;this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn} of this.listeners)target.removeEventListener(name,fn);this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();}
 }
