@@ -60,3 +60,26 @@ The browser uses the SVG compatibility renderer. GPU rendering and physical mobi
 A direct authenticated request to the deployed `/api/products/import` endpoint returned HTTP 200 for the real Consul CRM44MB link. It returned the expected product name, fridge category, explicit unpackaged evidence, and dimensions `{width:62.2,height:184.7,depth:72.4}` in centimeters. This verified the production API → public DNS → storefront HTML → extraction → JSON boundary. No credentials are sent to the storefront. The earlier preview DNS failure was specific to the restricted preview runtime.
 
 The generated house rear doorway was moved to keep the kitchen counter out of the circulation path. The regression check walks continuously from the living room through that doorway into the yard.
+
+# Object movement update
+
+## Automated
+
+26 tests pass. Four additional regressions cover quick navigation versus hold/jitter, primary-button ownership and modifier/cancel/reset behavior, optional snapping and bounds without altering imported dimensions or provenance, and rotated-wall opening constraints and hosted-wall translation. TypeScript, targeted ESLint and the production build pass.
+
+## Browser
+
+Verified in the supervised SVG preview:
+
+- A held click on a sofa selects it without displacement or a history entry.
+- The Move toolbar button moves the sofa from (5.5, -4.6) to (4.5, -3.25), on the 0.25 m grid; rendered room-label transforms stay identical, confirming a fixed camera.
+- One undo restores the original position; redo restores the moved position.
+- A held drag in selection mode moves the sofa again to (6.25, -2.25), preserving camera transforms.
+- Reload retains the sofa coordinates and dimensions.
+- Empty-space dragging pans the floor-plan camera after fixing its left-button mapping.
+- Moving a wall in 3D changes its position while camera-label transforms stay unchanged; undo restores it.
+- The Move toolbar label, inline guidance and property inspector remain visible and legible.
+
+Fast pre-hold movement and cancellation are covered by the gesture tests; the browser automation uses a held drag. Hardware-accelerated WebGL, physical touch gestures and keyboard cancellation during a continuously held mouse press still need an interactive device check.
+
+![Movement tool and selected sofa](object-move.jpg)

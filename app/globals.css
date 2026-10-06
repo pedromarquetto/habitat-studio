@@ -27,3 +27,5 @@
 @media(max-width:650px){.product-review{grid-template-columns:1fr;gap:15px}.product-visuals{display:flex;gap:10px;align-items:center}.product-preview-wrap{flex:1;min-width:0}.product-reference{width:74px;flex-direction:column;margin:0;gap:7px}.product-3d-preview,.product-preview-empty{height:180px}.product-dialog{padding:20px}.product-url-form>div{flex-direction:column}.product-url-form button{width:100%}.product-dimensions{gap:7px;font-size:12px}.product-dimensions small{line-height:1.4}.product-dialog [data-slot=dialog-footer]{flex-wrap:wrap}}
 
 .product-paste-specs{margin:12px 0;font-size:14px;color:#536d5e}.product-paste-specs summary{cursor:pointer}.product-paste-specs textarea{margin:9px 0;font-size:14px;min-height:94px}.product-paste-specs button{font-size:14px}
+
+.scene-toolbar .move-tool-button{width:auto;padding:0 .625rem;gap:.35rem;font-size:.875rem}

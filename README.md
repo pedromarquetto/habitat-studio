@@ -35,6 +35,12 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 
 ![Product measurement review](docs/product-import.jpg)
 
+## Moving objects
+
+Hold an object briefly before dragging in 3D or floor-plan view. The **Mover** tool is also available directly in the viewport toolbar. The camera stays fixed during object movement; empty-space drags in selection mode navigate.
+
+![Object movement and position inspector](docs/object-move.jpg)
+
 ## Run locally
 
 Requires Node.js 22.15+ and pnpm 11+. No API keys or paid services are required.
@@ -62,20 +68,21 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 2. Select **Parede**, **Cômodo**, or **Telhado**, then click two points in the viewport.
 3. Select **Porta** or **Janela** and click a wall on the active floor.
 4. Choose a furniture/appliance item and click the floor. Press **R** to rotate before placement.
-5. Select an object to change its meter coordinates, dimensions, color, name, or apartment.
+5. Select an object to change its meter coordinates, dimensions, color, name, or apartment. Hold the primary mouse button over it for 450 ms, then drag to move. Moving immediately keeps camera navigation. Alternatively choose **Mover** (**M**) to drag without waiting; **V** returns to selection. Release to commit, or press **Esc** to cancel. A move creates one undo entry. Doors/windows slide along their host wall.
 6. Use the floors panel to add, duplicate, or select a floor. **Gerar prédio** creates one to eight furnished floors.
 7. Switch to **Caminhar** to enter the active floor or selected room. Use **WASD** to walk and **Shift** to move faster. Hold the left mouse button and drag to look; release it to stop turning. Arrow keys also look around. Adjust **Sensibilidade** in the lower-right corner (25–200%). Stairs connect floors; the floor buttons provide direct access.
 8. Use **Exportar** to back up the project or move it to another browser.
 
 | Shortcut | Action |
 | --- | --- |
-| V | Selection tool |
+| V | Selection and camera navigation |
+| M | Move tool (drag immediately) |
 | R | Rotate selected object or placement preview by 90° |
 | Delete / Backspace | Delete selected object |
 | Ctrl/Cmd + Z | Undo |
 | Ctrl/Cmd + Shift + Z | Redo |
 | Ctrl/Cmd + S | Save in the current browser |
-| Esc | Cancel drawing / stop camera drag |
+| Esc | Cancel object movement / drawing / stop camera drag |
 | WASD | Walk |
 | Shift | Walk faster |
 | Arrow keys | Look around in walking mode |
@@ -85,6 +92,7 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 - `lib/habitat/domain.ts`: versioned document schema, generators, hosted openings, collision, movement and floor support. Independent of rendering and React.
 - `lib/habitat/models.ts`: procedural 3D geometry and material/resource lifecycle.
 - `lib/habitat/engine.ts`: cameras, orbit and walking controls, picking, previews and renderers.
+- `lib/habitat/object-move.ts`: gesture arbitration, grid snapping and hosted-opening constraints.
 - `lib/habitat/walk-controls.ts`: primary-pointer drag ownership and normalized mouse/touch sensitivity.
 - `components/habitat/Studio.tsx`: editor actions, history, property panels and persistence.
 - `components/habitat/Viewport.tsx`: client-side renderer lifecycle and graceful failure handling.

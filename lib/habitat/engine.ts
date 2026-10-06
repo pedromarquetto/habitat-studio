@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SVGRenderer, SVGObject } from 'three/addons/renderers/SVGRenderer.js';
 import { makeModel, disposeObject } from './models';
-import { catalogFor, findSpawn, movePlayer, type Entity, type Kind, type Project, type Tool, type View } from './domain';
+import { catalogFor, findSpawn, movePlayer, updateEntity, type Entity, type Kind, type Project, type Tool, type View } from './domain';
 import { WalkLook } from './walk-controls';
+import { MoveGesture, MOVE_HOLD_MS, entityMovePosition } from './object-move';
 
 export interface EngineState {project:Project;floorId:string;view:View;isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null}
 export interface Pick {point:{x:number;z:number};entityId:string|null}
-export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void}
+export interface DragStatus {entityId:string;phase:'holding'|'moving'}
+export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:{x:number;z:number})=>boolean}
 
 export class HabitatEngine {
   readonly renderer:THREE.WebGLRenderer|SVGRenderer;
@@ -24,7 +26,10 @@ export class HabitatEngine {
   private keys=new Set<string>();private touchMove={forward:0,right:0};private pointerStart={x:0,y:0};private look=new WalkLook();
   private state:EngineState|null=null;private objects=new Map<string,THREE.Group>();
   private player={x:0,z:-9,feet:0};private yaw=0;private pitch=0;private stopped=false;private dirty=true;
-  private listeners:{target:EventTarget;name:string;fn:EventListener}[]=[];
+  private moveGesture=new MoveGesture();private holdTimer:ReturnType<typeof setTimeout>|null=null;
+  private moving:{entity:Entity;anchor:{x:number;z:number};point:{x:number;z:number};hasMoved:boolean}|null=null;
+  private suppressedPick:number|null=null;
+  private listeners:{target:EventTarget;name:string;fn:EventListener;capture:boolean}[]=[];
 
   constructor(private host:HTMLElement,private callbacks:EngineCallbacks){
     try{this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});this.software=false;}
@@ -44,10 +49,12 @@ export class HabitatEngine {
     this.scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(axesPoints),new THREE.LineBasicMaterial({color:'#99ada3',transparent:true,opacity:.5})));
     this.scene.add(this.root,this.ghost,this.selection);this.selection.visible=false;
     this.camera.position.set(17,18,22);this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.target.set(0,0,0);this.controls.enableDamping=true;this.controls.dampingFactor=.1;this.controls.maxPolarAngle=Math.PI/2-.02;this.controls.minDistance=2;this.controls.maxDistance=110;
-    this.planCamera.position.set(0,80,0);this.planCamera.up.set(0,0,-1);this.planCamera.lookAt(0,0,0);this.planControls=new OrbitControls(this.planCamera,this.renderer.domElement);this.planControls.enableRotate=false;this.planControls.enableDamping=true;this.planControls.enabled=false;this.planControls.minZoom=.3;this.planControls.maxZoom=12;
+    this.planCamera.position.set(0,80,0);this.planCamera.up.set(0,0,-1);this.planCamera.lookAt(0,0,0);this.planControls=new OrbitControls(this.planCamera,this.renderer.domElement);this.planControls.enableRotate=false;this.planControls.mouseButtons.LEFT=THREE.MOUSE.PAN;this.planControls.touches.ONE=THREE.TOUCH.PAN;this.planControls.enableDamping=true;this.planControls.enabled=false;this.planControls.minZoom=.3;this.planControls.maxZoom=12;
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(host);this.resize();
     this.listen(this.renderer.domElement,'pointerdown',e=>{
       const event=e as PointerEvent;
+      this.suppressedPick=null;
+      if(this.moveGesture.pointerId!==null && this.moveGesture.pointerId!==event.pointerId)this.finishMove(false);
       if(this.state?.view==='walk'){
         if(this.look.begin(event)){
           event.preventDefault();this.renderer.domElement.focus({preventScroll:true});
@@ -56,30 +63,49 @@ export class HabitatEngine {
         return;
       }
       this.pointerStart={x:event.clientX,y:event.clientY};
-    });
+      this.armMove(event);
+    },true);
+    // Capture precedes OrbitControls' document handlers. Real down/up events
+    // remain intact for quick navigation; the controls disconnect after a hold.
+    this.listen(document,'pointermove',e=>{
+      const event=e as PointerEvent,action=this.moveGesture.move(event);
+      if(action==='navigate'||action==='cancel'){this.finishMove(false);this.suppressedPick=event.pointerId;return;}
+      if(action==='hold'||action==='move'){
+        event.preventDefault();event.stopImmediatePropagation();
+        if(action==='move')this.previewMove(event);
+      }
+    },true);
+    this.listen(document,'pointerup',e=>{
+      const event=e as PointerEvent;if(event.pointerId!==this.moveGesture.pointerId)return;
+      const active=this.moveGesture.phase==='moving';
+      if(active){this.previewMove(event);event.stopImmediatePropagation();}
+      this.finishMove(active);
+    },true);
     this.listen(this.renderer.domElement,'pointerup',e=>{const event=e as PointerEvent;this.endLook(event.pointerId);this.pick(event);});
-    this.listen(this.renderer.domElement,'pointercancel',e=>this.endLook((e as PointerEvent).pointerId));
-    this.listen(this.renderer.domElement,'lostpointercapture',e=>this.endLook((e as PointerEvent).pointerId));
+    this.listen(this.renderer.domElement,'pointercancel',e=>{const id=(e as PointerEvent).pointerId;this.endLook(id);if(id===this.moveGesture.pointerId)this.finishMove(false);});
+    this.listen(this.renderer.domElement,'lostpointercapture',e=>{const id=(e as PointerEvent).pointerId;this.endLook(id);if(id===this.moveGesture.pointerId)this.finishMove(false);});
+    this.listen(this.renderer.domElement,'wheel',e=>{if(this.moveGesture.phase==='moving'){e.preventDefault();e.stopImmediatePropagation();}else this.finishMove(false);},true);
     this.listen(this.renderer.domElement,'pointermove',e=>this.hover(e as PointerEvent));
     this.listen(document,'keydown',e=>this.key(e as KeyboardEvent,true));this.listen(document,'keyup',e=>this.key(e as KeyboardEvent,false));
-    this.listen(window,'blur',()=>{this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();});
-    this.listen(document,'visibilitychange',()=>{if(document.hidden){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();}});
+    this.listen(window,'blur',()=>{this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);});
+    this.listen(document,'visibilitychange',()=>{if(document.hidden){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);}});
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
-  private listen(target:EventTarget,name:string,fn:EventListener){target.addEventListener(name,fn);this.listeners.push({target,name,fn});}
-  private resize(){const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight);this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const aspect=w/h;this.planCamera.left=-15*aspect;this.planCamera.right=15*aspect;this.planCamera.top=15;this.planCamera.bottom=-15;this.planCamera.updateProjectionMatrix();}
+  private listen(target:EventTarget,name:string,fn:EventListener,capture=false){target.addEventListener(name,fn,{capture,passive:false});this.listeners.push({target,name,fn,capture});}
+  private resize(){this.finishMove(false);const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight);this.renderer.setSize(w,h);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const aspect=w/h;this.planCamera.left=-15*aspect;this.planCamera.right=15*aspect;this.planCamera.top=15;this.planCamera.bottom=-15;this.planCamera.updateProjectionMatrix();}
   private get activeCamera(){return this.state?.view==='plan'?this.planCamera:this.camera;}
   update(next:EngineState){
     this.dirty=true;
     const previous=this.state;
     const docChanged=previous?.project!==next.project;
+    if(this.moving && (docChanged || previous?.floorId!==next.floorId || previous?.view!==next.view || previous?.tool!==next.tool || previous?.snapping!==next.snapping || previous?.cutaway!==next.cutaway || previous?.isolate!==next.isolate))this.finishMove(false);
     const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view;
     this.state=next;
     const elevation=next.project.floors.find(f=>f.id===next.floorId)?.elevation??0;this.plane.constant=-elevation;
     this.grid.visible=next.grid&&next.view!=='walk';this.grid.position.y=elevation+.012;
     if(renderChanged)this.rebuild();
-    this.controls.enabled=next.view==='3d'&&next.tool==='select';this.planControls.enabled=next.view==='plan'&&next.tool==='select';
-    this.renderer.domElement.style.cursor=next.view==='walk'?(this.look.pointerId!==null?'grabbing':'grab'):next.tool==='select'?'grab':'crosshair';
+    this.restoreControls();
+    this.renderer.domElement.style.cursor=this.moveGesture.phase==='moving'?'grabbing':this.moveGesture.phase==='holding'?'progress':next.view==='walk'?(this.look.pointerId!==null?'grabbing':'grab'):next.tool==='select'?'grab':next.tool==='move'?'move':'crosshair';
     if(previous?.view!==next.view){
       this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();
       if(next.view==='walk'){this.player=findSpawn(next.project,next.floorId,next.selectedId??undefined);this.yaw=Math.PI;this.pitch=0;this.callbacks.onPosition(this.player);}
@@ -135,9 +161,78 @@ export class HabitatEngine {
     return {point:{x:point.x,z:point.z},entityId:object?.object.userData.entityId??null};
   }
   private pick(event:PointerEvent){
+    if(event.pointerId===this.suppressedPick){this.suppressedPick=null;return;}
     if(this.state?.view==='walk')return;
     if(event.button!==0||Math.hypot(event.clientX-this.pointerStart.x,event.clientY-this.pointerStart.y)>5)return;
     const pick=this.hit(event);if(pick&&Math.abs(pick.point.x)<150&&Math.abs(pick.point.z)<150){this.callbacks.onPick(pick);this.renderer.domElement.focus();}
+  }
+  private restoreControls(){
+    const enabled=this.moveGesture.phase!=='moving';
+    this.controls.enabled=enabled&&this.state?.view==='3d'&&this.state.tool==='select';
+    this.planControls.enabled=enabled&&this.state?.view==='plan'&&this.state.tool==='select';
+  }
+  private armMove(event:PointerEvent){
+    const s=this.state;if(!s || s.view==='walk' || !['select','move'].includes(s.tool))return;
+    const pick=this.hit(event),item=s.project.entities.find(e=>e.id===pick?.entityId);
+    if(!pick || !item || item.floorId!==s.floorId || !this.moveGesture.begin(event))return;
+    this.moving={entity:item,anchor:pick.point,point:{x:item.x,z:item.z},hasMoved:false};
+    this.renderer.domElement.dataset.objectDrag='holding';this.renderer.domElement.style.cursor='progress';
+    this.callbacks.onDragState({entityId:item.id,phase:'holding'});
+    const activate=()=>{
+      this.holdTimer=null;
+      if(!this.moving || !this.moveGesture.activate(event.pointerId))return;
+      // Drain old orbit damping before fixing the drag's ground-plane anchor.
+      for(const controls of [this.controls,this.planControls]){
+        const damping=controls.enableDamping;controls.enableDamping=false;controls.update();controls.enableDamping=damping;controls.disconnect();
+      }
+      this.moving.anchor=this.hit(event)?.point??this.moving.anchor;
+      this.restoreControls();this.renderer.domElement.setPointerCapture(event.pointerId);
+      this.renderer.domElement.dataset.objectDrag='moving';this.renderer.domElement.style.cursor='grabbing';
+      this.callbacks.onPick({entityId:item.id,point:pick.point});
+      this.callbacks.onDragState({entityId:item.id,phase:'moving'});this.dirty=true;
+    };
+    if(s.tool==='move')activate();else this.holdTimer=setTimeout(activate,MOVE_HOLD_MS);
+  }
+  private previewMove(event:PointerEvent){
+    const s=this.state,drag=this.moving;if(!s || !drag)return;
+    if(!drag.hasMoved && Math.hypot(event.clientX-this.pointerStart.x,event.clientY-this.pointerStart.y)<3)return;
+    const pick=this.hit(event);if(!pick)return;
+    drag.hasMoved=true;
+    const point=entityMovePosition(s.project,drag.entity.id,{x:drag.entity.x+pick.point.x-drag.anchor.x,z:drag.entity.z+pick.point.z-drag.anchor.z},s.snapping);
+    if(!point || point.x===drag.point.x&&point.z===drag.point.z)return;
+    drag.point=point;
+    const dx=point.x-drag.entity.x,dz=point.z-drag.entity.z;
+    for(const item of s.project.entities){
+      if(item.id!==drag.entity.id && item.hostId!==drag.entity.id)continue;
+      const object=this.objects.get(item.id);if(object)object.position.set(item.x+dx,s.project.floors.find(f=>f.id===item.floorId)!.elevation,item.z+dz);
+    }
+    // A sliding door/window changes just its host wall's hole, not the whole scene.
+    if(drag.entity.hostId){
+      const host=s.project.entities.find(e=>e.id===drag.entity.hostId)!;
+      const old=this.objects.get(host.id);if(old){this.root.remove(old);disposeObject(old);}
+      const model=makeModel(host,updateEntity(s.project,drag.entity.id,point).entities,s.cutaway);
+      model.position.set(host.x,s.project.floors.find(f=>f.id===host.floorId)!.elevation,host.z);model.rotation.y=host.rotation*Math.PI/180;
+      this.root.add(model);this.objects.set(host.id,model);
+    }
+    this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;this.callbacks.onHover(point);
+  }
+  private finishMove(commit:boolean){
+    const drag=this.moving,active=this.moveGesture.phase==='moving',pointerId=this.moveGesture.pointerId;
+    if(!drag)return;
+    if(this.holdTimer!==null){clearTimeout(this.holdTimer);this.holdTimer=null;}
+    this.moveGesture.end();this.moving=null;
+    if(active && !this.stopped){this.controls.connect(this.renderer.domElement);this.planControls.connect(this.renderer.domElement);}
+    this.restoreControls();delete this.renderer.domElement.dataset.objectDrag;
+    this.renderer.domElement.style.cursor=this.state?.tool==='select'?'grab':this.state?.tool==='move'?'move':'crosshair';
+    if(active && !commit)this.suppressedPick=pointerId;
+    if(active && pointerId!==null && this.renderer.domElement.hasPointerCapture(pointerId))this.renderer.domElement.releasePointerCapture(pointerId);
+    this.callbacks.onDragState(null);
+    if(active){
+      const changed=drag.point.x!==drag.entity.x || drag.point.z!==drag.entity.z;
+      const committed=commit&&changed&&this.callbacks.onMove(drag.entity.id,drag.point);
+      if(!committed){this.rebuild();this.highlight();}
+      this.dirty=true;
+    }
   }
   private hover(event:PointerEvent){
     if(!this.state)return;
@@ -148,7 +243,7 @@ export class HabitatEngine {
       return;
     }
     const pick=this.hit(event);if(!pick)return;this.callbacks.onHover(pick.point);
-    if(this.state.tool==='select')return;
+    if(this.state.tool==='select'||this.state.tool==='move')return;
     this.preview(pick.point);
   }
   private preview(point:{x:number;z:number}){
@@ -170,6 +265,7 @@ export class HabitatEngine {
   private key(event:KeyboardEvent,down:boolean){
     const target=event.target as HTMLElement;
     if(target.closest('input,textarea,select,[role="dialog"],[role="combobox"],[contenteditable="true"]'))return;
+    if(event.code==='Escape'&&down&&this.moveGesture.pointerId!==null){event.preventDefault();this.finishMove(false);return;}
     if(this.state?.view!=='walk')return;
     if(event.code==='Escape'&&down){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();return;}
     if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(event.code)){event.preventDefault();if(down)this.keys.add(event.code);else this.keys.delete(event.code);}
@@ -187,7 +283,7 @@ export class HabitatEngine {
       this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed);
       this.camera.position.set(this.player.x,this.player.feet+1.65,this.player.z);this.camera.rotation.set(this.pitch,this.yaw,0,'YXZ');
       if(time-this.lastPositionUpdate>200){this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;}
-    }else{const orbitChanged=this.controls.update(),planChanged=this.planControls.update();if(orbitChanged||planChanged)this.dirty=true;}
+    }else if(this.moveGesture.phase!=='moving'){const orbitChanged=this.controls.update(),planChanged=this.planControls.update();if(orbitChanged||planChanged)this.dirty=true;}
     if(!this.software||(this.dirty&&time-this.lastRender>66)){this.renderer.render(this.scene,this.activeCamera);this.lastRender=time;this.dirty=false;}
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
@@ -195,7 +291,7 @@ export class HabitatEngine {
     const active=this.look.pointerId;
     if(!this.look.end(pointerId))return;
     if(active!==null&&this.renderer.domElement.hasPointerCapture(active))this.renderer.domElement.releasePointerCapture(active);
-    this.renderer.domElement.style.cursor=this.state?.view==='walk'?'grab':this.state?.tool==='select'?'grab':'crosshair';this.callbacks.onLook(false);
+    this.renderer.domElement.style.cursor=this.state?.view==='walk'?'grab':this.state?.tool==='select'?'grab':this.state?.tool==='move'?'move':'crosshair';this.callbacks.onLook(false);
   }
   setTouchMove(forward:number,right:number){this.touchMove={forward,right};}
   step(forward:number,right:number){
@@ -204,13 +300,14 @@ export class HabitatEngine {
     this.dirty=true;this.callbacks.onPosition({...this.player});
   }
   home(){
+    this.finishMove(false);
     this.dirty=true;
     const elevation=this.state?.project.floors.find(f=>f.id===this.state?.floorId)?.elevation??0;
     const bounds=new THREE.Box3().setFromObject(this.root),size=bounds.getSize(new THREE.Vector3()),center=bounds.isEmpty()?new THREE.Vector3(0,elevation,0):bounds.getCenter(new THREE.Vector3());
     const span=Math.max(size.x,size.z,8),distance=span*1.65;this.camera.position.copy(center).add(new THREE.Vector3(17,18,22).normalize().multiplyScalar(distance));this.camera.rotation.set(0,0,0);this.controls.target.copy(center);this.controls.update();
     this.planCamera.position.set(0,elevation+80,0);this.planCamera.zoom=1;this.planControls.target.set(0,elevation,0);this.planCamera.updateProjectionMatrix();this.planControls.update();
   }
-  zoom(direction:number){this.dirty=true;if(this.state?.view==='plan'){this.planCamera.zoom=Math.max(.3,Math.min(12,this.planCamera.zoom*(direction>0?1.25:.8)));this.planCamera.updateProjectionMatrix();}else if(this.state?.view!=='walk'){const vec=this.camera.position.clone().sub(this.controls.target);vec.multiplyScalar(direction>0?.8:1.25);this.camera.position.copy(this.controls.target).add(vec);this.controls.update();}}
-  focus(id:string){this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
-  dispose(){this.stopped=true;this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn} of this.listeners)target.removeEventListener(name,fn);this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();}
+  zoom(direction:number){this.finishMove(false);this.dirty=true;if(this.state?.view==='plan'){this.planCamera.zoom=Math.max(.3,Math.min(12,this.planCamera.zoom*(direction>0?1.25:.8)));this.planCamera.updateProjectionMatrix();}else if(this.state?.view!=='walk'){const vec=this.camera.position.clone().sub(this.controls.target);vec.multiplyScalar(direction>0?.8:1.25);this.camera.position.copy(this.controls.target).add(vec);this.controls.update();}}
+  focus(id:string){this.finishMove(false);this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
+  dispose(){this.stopped=true;this.finishMove(false);this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn,capture} of this.listeners)target.removeEventListener(name,fn,capture);this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();}
 }

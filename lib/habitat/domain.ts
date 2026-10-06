@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object'] as const;
 export type Kind = typeof KINDS[number];
 export type View = '3d' | 'plan' | 'walk';
-export type Tool = 'select' | 'wall' | 'room' | 'roof' | 'place' | 'area' | 'line';
+export type Tool = 'select' | 'move' | 'wall' | 'room' | 'roof' | 'place' | 'area' | 'line';
 const WebUrl = z.string().max(2048).url().refine(v => ['http:','https:'].includes(new URL(v).protocol), 'Use um link HTTP ou HTTPS.');
 export const ProductSourceSchema = z.object({
   url: WebUrl, imageUrl: WebUrl.optional(), brand: z.string().max(120).optional(), model: z.string().max(120).optional(),
