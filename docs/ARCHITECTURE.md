@@ -79,3 +79,10 @@ The optional `light` object stores power, finite intensity from 0 to 2, and a he
 `reachableSwitch` raycasts the actual meshes. Only a first-hit linked switch within 2.5 m can be activated, so other geometry blocks interaction. A primary click toggles only if the gesture never exceeds five pixels; dragging and returning to its origin still counts as navigation. E acts once per non-repeated keydown. Opening the lighting dialog pauses movement input. Changes that preserve `sameWalkGeometry` do not respawn or reorient the player.
 
 Real mode builds lights for the player's physical floor, capped at 16 active sources. SVGRenderer ignores some material/light intensity properties and has no shadow occlusion: compatibility rendering therefore uses reduced point-light power, ambient color adjustment at night, and black emissive colors for disabled fixtures. It is an approximate preview; hardware lighting remains the preferred renderer.
+
+
+## Precise switch mounting
+
+The editor's pick carries the actual mesh intersection and clicked wall side separately from its floor-plane point. `switchMountPosition` constrains local wall offset, base height, facing angle and depth to the wall face, using half the fixture depth plus a 2 mm clearance. It supports either face and rotated walls. Openings are checked in both horizontal and vertical bounds; colliding placements are rejected without seeking another unrelated position. A mesh hit remains available even when the view ray does not intersect the floor plane.
+
+Switch placement and its ghost share this helper. A mounted-switch drag intersects a vertical plane parallel to the wall, retaining the original pointer offset; plan view changes horizontal offset only. Gesture release commits one history entry, with optional Y. Numeric changes, face swapping and duplication preserve face mounting, and free rotation is disabled for mounted switches. Focusing uses the fixture's outward normal to show the correct face at close range. Moving a legacy displaced switch re-seats it on its wall without changing its circuit.

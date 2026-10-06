@@ -145,3 +145,12 @@ In Real mode at night, clicking the physical Hall switch and pressing E both tog
 ![Physical switch and nearby action](light-switch.jpg)
 
 These checks used the SVG compatibility renderer because this test browser has WebGL disabled. Compatibility lighting was checked for visible on/off behavior without overexposure; GPU light falloff, shadows, reflections and light occlusion were not verified here. Mobile layout was reviewed in source; physical touch and GPU testing remain pending.
+
+
+# Wall-switch positioning correction
+
+40 regression tests pass. Two added cases exercise exact surface placement on both sides at four wall angles, 5 cm snapping, clicked height, bare walls without rooms, door avoidance without position jumps, safe edge/height clamping, wall-constrained movement, retained depth/height, and attachment after wall rotation/thickness changes. TypeScript and the production build pass.
+
+Browser verification used the SVG compatibility renderer. Clicking a visible exterior wall inserted a flush switch at the clicked location, with full-height walls enabled. Mover na parede showed the correct face at close range. Dragging changed X from 8.10 to 8.30 m and base height from 0.85 to 1.05 m, preserving Z=7.117 m. Undo/redo retained one movement entry. Numeric displacement set X=8.50 m; swapping the wall face changed Z to 6.883 m and rotation to 180°, and swapping back restored Z=7.117 m/0°. The existing three-floor project was preserved. GPU and physical touch rendering were not exercised.
+
+![Mounted switch and precision controls](switch-mount.jpg)

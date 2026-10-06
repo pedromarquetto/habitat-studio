@@ -96,7 +96,7 @@ export const CATALOG: CatalogItem[] = [
   {kind:'bookshelf',name:'Estante',section:'woodwork',w:1.2,h:1.9,d:.35,color:'#a98b67',hint:'Prateleiras abertas'},
   {kind:'wardrobe',name:'Guarda-roupa',section:'woodwork',w:2.4,h:2.3,d:.65,color:'#b89c7f',hint:'Três portas de correr'},
   {kind:'closetPanel',name:'Painel ripado',section:'woodwork',w:2,h:2.5,d:.08,color:'#aa825a',hint:'Painel de marcenaria'},
-  {kind:'lightSwitch',name:'Interruptor',section:'structure',w:.09,h:.13,d:.05,color:'#f6f5ee',hint:'Clique em uma parede e vincule ao cômodo',y:1.1},
+  {kind:'lightSwitch',name:'Interruptor',section:'structure',w:.09,h:.13,d:.05,color:'#f6f5ee',hint:'Clique na face livre da parede e vincule ao cômodo',y:1.1},
   {kind:'ceilingLight',name:'Plafon',section:'furniture',w:.35,h:.08,d:.35,color:'#f3f1e5',hint:'Luminária de teto vinculada ao cômodo',y:2.7},
   {kind:'countertop',name:'Bancada',section:'woodwork',w:2,h:.05,d:.65,color:'#d4d2c8',hint:'Tampo sobre os módulos',y:.9},
 ];
@@ -302,7 +302,7 @@ export function updateEntity(project:Project,id:string,patch:Partial<Entity>):Pr
   const updated={...old,...patch};
   return {...project,entities:project.entities.map(e=>{
     if(e.id===id)return updated;
-    if(old.kind==='wall'&&e.switchWallId===id){const local=localPoint(old,e.x,e.z),pos=worldPoint(updated,local.x,local.z),side=Math.sign(local.z)||1;return {...e,...pos,rotation:updated.rotation+(side<0?180:0),floorId:updated.floorId};}
+    if(old.kind==='wall'&&e.switchWallId===id){const local=localPoint(old,e.x,e.z),side=Math.sign(local.z)||1,pos=worldPoint(updated,local.x,side*(updated.d/2+e.d/2+.002));return {...e,...pos,rotation:updated.rotation+(side<0?180:0),floorId:updated.floorId};}
     if(old.kind==='wall'&&e.hostId===id){const local=localPoint(old,e.x,e.z),pos=worldPoint(updated,local.x,0);return {...e,...pos,rotation:updated.rotation,floorId:updated.floorId,d:updated.d};}
     return e;
   })};

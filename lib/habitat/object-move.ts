@@ -1,3 +1,4 @@
+import { switchMountPosition, type MovePoint } from './switch-mount';
 import { localPoint, snap, worldPoint, type Project } from './domain';
 
 export const MOVE_HOLD_MS = 450;
@@ -30,9 +31,15 @@ export class MoveGesture {
 }
 
 /** Hosted openings slide along their wall without crossing another opening. */
-export function entityMovePosition(project:Project,id:string,point:{x:number;z:number},snapping:boolean):{x:number;z:number}|null {
+export function entityMovePosition(project:Project,id:string,point:MovePoint,snapping:boolean):MovePoint|null {
   const item=project.entities.find(e=>e.id===id);
   if(!item || !Number.isFinite(point.x) || !Number.isFinite(point.z))return null;
+  if(item.kind==='lightSwitch'&&item.switchWallId){
+    const wall=project.entities.find(e=>e.id===item.switchWallId);if(!wall)return null;
+    const side=Math.sign(localPoint(wall,item.x,item.z).z)||1;
+    const mount=switchMountPosition(project,wall.id,{...point,y:(point.y??item.y??1.1)+item.h/2},{item,side,snapping,ignoreId:item.id});
+    return mount?{x:mount.x,z:mount.z,y:mount.y}:null;
+  }
   if(item.hostId){
     const wall=project.entities.find(e=>e.id===item.hostId && e.kind==='wall');
     if(!wall)return null;

@@ -58,6 +58,14 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 ![Room light controls](docs/lighting-controls.jpg)
 ![Visible switch during exploration](docs/light-switch.jpg)
 
+### Precise wall-switch placement
+
+Choose **Interruptor**, then click a free wall face. The editor opens full-height walls and uses the actual surface hit instead of the floor projection; a green preview shows the mounting position. The switch faces the clicked side and stays flush with the wall. Door/window openings reject placement rather than moving the switch to an unrelated position. A bare wall can hold an unlinked switch; assign its circuit in Properties.
+
+Select an installed switch and choose **Mover na parede** to view its face closely. Drag horizontally or vertically to slide it and change height while keeping the wall attachment. **Encaixe** uses 5 cm increments for switches. **Deslocamento na parede**, **Elevação** and **Trocar face da parede** provide precise adjustments. Switch yaw follows the wall automatically; wall thickness changes and switch duplication also preserve mounting. Existing displaced switches are re-seated when moved or adjusted.
+
+![Precise switch mounting](docs/switch-mount.jpg)
+
 ## Moving objects
 
 Hold an object briefly before dragging in 3D or floor-plan view. The **Mover** tool is also available directly in the viewport toolbar. The camera stays fixed during object movement; empty-space drags in selection mode navigate.

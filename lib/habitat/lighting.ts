@@ -1,3 +1,4 @@
+import { switchMountPosition, type MovePoint } from './switch-mount';
 import { entity, inside, localPoint, worldPoint, updateEntity, type Entity, type Project } from './domain';
 
 export const lightSettings=(e:Entity)=>e.light??{on:true,intensity:1,color:'#ffd6a3'};
@@ -42,11 +43,15 @@ function switchOnWall(project:Project,wall:Entity,room:Entity,offset:number):Ent
   }
   return null;
 }
-export function attachLightSwitch(project:Project,wallId:string,point:{x:number;z:number},roomId?:string){
+export function attachLightSwitch(project:Project,wallId:string,point:MovePoint,roomId?:string,options:{side?:number;snapping?:boolean}={}){
   const wall=project.entities.find(e=>e.id===wallId&&e.kind==='wall');if(!wall)return null;
+  // In plan view choose the adjacent room's face. In 3D use the face actually clicked.
   const rooms=project.entities.filter(e=>e.floorId===wall.floorId&&isLitRoom(e)&&(!roomId||e.id===roomId)).sort((a,b)=>Math.hypot(a.x-point.x,a.z-point.z)-Math.hypot(b.x-point.x,b.z-point.z));
-  for(const room of rooms){const candidate=switchOnWall(project,wall,room,localPoint(wall,point.x,point.z).x);if(candidate)return candidate;}
-  return null;
+  const adjacent=rooms.find(room=>inside(room,point.x,point.z,.2));
+  const side=options.side??(adjacent?Math.sign(localPoint(wall,adjacent.x,adjacent.z).z)||1:undefined);
+  const mount=switchMountPosition(project,wallId,point,{...options,side});if(!mount)return null;
+  const room=rooms.find(room=>inside(room,mount.x,mount.z,.05));
+  return entity('lightSwitch',wall.floorId,mount.x,mount.z,{...mount,roomId:room?.id,apartment:room?.apartment??'',name:room?`Interruptor · ${room.name}`:'Interruptor'});
 }
 export function installRoomLighting(project:Project,floorId?:string){
   const additions:Entity[]=[];

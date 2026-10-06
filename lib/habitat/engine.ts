@@ -7,15 +7,17 @@ import { WalkLook } from './walk-controls';
 import { MoveGesture, MOVE_HOLD_MS, entityMovePosition } from './object-move';
 import { RotationDial, normalizeRotation } from './object-rotate';
 import { RealMaterials } from './real-materials';
-import { lightSources, sameWalkGeometry } from './lighting';
+import { attachLightSwitch, lightSources, sameWalkGeometry } from './lighting';
+import type { MovePoint } from './switch-mount';
+import { localPoint, worldPoint } from './domain';
 import { reachableSwitch, type SwitchTarget } from './light-interaction';
 export type { SwitchTarget } from './light-interaction';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export interface EngineState {project:Project;floorId:string;view:View;realMode:boolean;lighting:'day'|'night';isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null}
-export interface Pick {point:{x:number;z:number};entityId:string|null}
+export interface Pick {point:{x:number;z:number};entityId:string|null;surface?:MovePoint;wallSide?:number}
 export interface DragStatus {entityId:string;phase:'holding'|'moving'|'rotating';rotation?:number}
-export interface EngineCallbacks {onToggleLight:(id:string)=>void;onSwitchTarget:(target:SwitchTarget|null)=>void;onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:{x:number;z:number})=>boolean;onRotate:(id:string,rotation:number)=>boolean}
+export interface EngineCallbacks {onToggleLight:(id:string)=>void;onSwitchTarget:(target:SwitchTarget|null)=>void;onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:MovePoint)=>boolean;onRotate:(id:string,rotation:number)=>boolean}
 
 export class HabitatEngine {
   readonly renderer:THREE.WebGLRenderer|SVGRenderer;
@@ -33,7 +35,7 @@ export class HabitatEngine {
   private state:EngineState|null=null;private objects=new Map<string,THREE.Group>();
   private player={x:0,z:-9,feet:0};private yaw=0;private pitch=0;private stopped=false;private dirty=true;
   private moveGesture=new MoveGesture();private holdTimer:ReturnType<typeof setTimeout>|null=null;
-  private moving:{entity:Entity;anchor:{x:number;z:number};point:{x:number;z:number};hasMoved:boolean}|null=null;
+  private moving:{entity:Entity;anchor:MovePoint;point:MovePoint;hasMoved:boolean}|null=null;
   private suppressedPick:number|null=null;
   private rotationRing=document.createElement('div');private rotationHandle=document.createElement('button');
   private realMaterials=new RealMaterials();private environment:THREE.WebGLRenderTarget|null=null;
@@ -163,7 +165,7 @@ export class HabitatEngine {
     if(next.view==='walk'&&docChanged&&previous&&!sameWalkGeometry(previous.project,next.project))this.player=findSpawn(next.project,next.floorId);
     if(next.view!=='walk'&&(!previous||docChanged&&previous.floorId!==next.floorId))this.home();
     this.highlight();
-    if(previous?.tool!==next.tool||previous?.placing!==next.placing||previous?.view!==next.view){disposeObject(this.ghost);this.ghost.clear();}
+    if(previous?.tool!==next.tool||previous?.placing!==next.placing||previous?.view!==next.view||docChanged&&next.tool==='place'){disposeObject(this.ghost);this.ghost.clear();}
     if(next.focusId&&previous?.focusId!==next.focusId)this.focus(next.focusId);
   }
   private rebuild(){
@@ -236,10 +238,14 @@ export class HabitatEngine {
   }
   private hit(event:PointerEvent):Pick|null{
     const rect=this.renderer.domElement.getBoundingClientRect();this.mouse.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);this.raycaster.setFromCamera(this.mouse,this.activeCamera);
-    const point=new THREE.Vector3();if(!this.raycaster.ray.intersectPlane(this.plane,point))return null;
+    const point=new THREE.Vector3(),floorHit=this.raycaster.ray.intersectPlane(this.plane,point);
     const hits=this.raycaster.intersectObjects(this.root.children,true);
-    const object=hits.find(hit=>Boolean(hit.object.userData.entityId));
-    return {point:{x:point.x,z:point.z},entityId:object?.object.userData.entityId??null};
+    const object=hits.find(hit=>hit.object instanceof THREE.Mesh&&Boolean(hit.object.userData.entityId));
+    const item=this.state?.project.entities.find(e=>e.id===object?.object.userData.entityId),wall=this.state?.project.entities.find(e=>e.id===(item?.kind==='wall'?item.id:item?.switchWallId??item?.hostId)&&e.kind==='wall');
+    if(!floorHit){if(!object)return null;point.copy(object.point);}
+    const elevation=this.state?.project.floors.find(f=>f.id===item?.floorId)?.elevation??0;
+    const surface=object?{x:object.point.x,z:object.point.z,...(this.state?.view==='3d'&&Math.abs(object.face?.normal.y??0)<.5?{y:object.point.y-elevation}:{})}:undefined;
+    return {point:{x:point.x,z:point.z},entityId:object?.object.userData.entityId??null,surface,wallSide:wall&&this.state?.view==='3d'?Math.sign(localPoint(wall,this.camera.position.x,this.camera.position.z).z)||1:undefined};
   }
   private switchTarget(event?:PointerEvent):SwitchTarget|null{
     const s=this.state;if(!s||s.view!=='walk')return null;
@@ -261,7 +267,7 @@ export class HabitatEngine {
   private selectedRotatable(){
     const s=this.state;if(!s||s.view==='walk'||!['select','move'].includes(s.tool))return null;
     const item=s.project.entities.find(e=>e.id===s.selectedId);
-    return item&&!item.hostId&&item.floorId===s.floorId&&this.objects.has(item.id)?item:null;
+    return item&&!item.hostId&&!item.switchWallId&&item.floorId===s.floorId&&this.objects.has(item.id)?item:null;
   }
   private positionRotationRing(){
     const item=this.selectedRotatable();
@@ -317,7 +323,7 @@ export class HabitatEngine {
     const s=this.state;if(!s || this.rotating || s.view==='walk' || !['select','move'].includes(s.tool))return;
     const pick=this.hit(event),item=s.project.entities.find(e=>e.id===pick?.entityId);
     if(!pick || !item || item.floorId!==s.floorId || !this.moveGesture.begin(event))return;
-    this.moving={entity:item,anchor:pick.point,point:{x:item.x,z:item.z},hasMoved:false};
+    this.moving={entity:item,anchor:this.movePointer(event,item)??pick.point,point:{x:item.x,z:item.z,...(item.switchWallId?{y:item.y??1.1}:{})},hasMoved:false};
     this.renderer.domElement.dataset.objectDrag='holding';this.renderer.domElement.style.cursor='progress';
     this.callbacks.onDragState({entityId:item.id,phase:'holding'});
     const activate=()=>{
@@ -327,7 +333,7 @@ export class HabitatEngine {
       for(const controls of [this.controls,this.planControls]){
         const damping=controls.enableDamping;controls.enableDamping=false;controls.update();controls.enableDamping=damping;controls.disconnect();
       }
-      this.moving.anchor=this.hit(event)?.point??this.moving.anchor;
+      this.moving.anchor=this.movePointer(event,item)??this.moving.anchor;
       this.restoreControls();this.renderer.domElement.setPointerCapture(event.pointerId);
       this.renderer.domElement.dataset.objectDrag='moving';this.renderer.domElement.style.cursor='grabbing';
       this.callbacks.onPick({entityId:item.id,point:pick.point});
@@ -335,18 +341,28 @@ export class HabitatEngine {
     };
     if(s.tool==='move')activate();else this.holdTimer=setTimeout(activate,MOVE_HOLD_MS);
   }
+  private movePointer(event:PointerEvent,item:Entity):MovePoint|null{
+    const pick=this.hit(event);if(!pick)return null;
+    const s=this.state!,wall=s.project.entities.find(e=>e.id===item.switchWallId);
+    if(!wall||s.view==='plan')return pick.point;
+    const normalPoint=worldPoint(wall,0,1),normal=new THREE.Vector3(normalPoint.x-wall.x,0,normalPoint.z-wall.z);
+    const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal,new THREE.Vector3(item.x,0,item.z)),point=new THREE.Vector3();
+    if(!this.raycaster.ray.intersectPlane(plane,point))return null;
+    const elevation=s.project.floors.find(f=>f.id===item.floorId)!.elevation;
+    return {x:point.x,z:point.z,y:point.y-elevation};
+  }
   private previewMove(event:PointerEvent){
     const s=this.state,drag=this.moving;if(!s || !drag)return;
     if(!drag.hasMoved && Math.hypot(event.clientX-this.pointerStart.x,event.clientY-this.pointerStart.y)<3)return;
-    const pick=this.hit(event);if(!pick)return;
+    const pick=this.movePointer(event,drag.entity);if(!pick)return;
     drag.hasMoved=true;
-    const point=entityMovePosition(s.project,drag.entity.id,{x:drag.entity.x+pick.point.x-drag.anchor.x,z:drag.entity.z+pick.point.z-drag.anchor.z},s.snapping);
-    if(!point || point.x===drag.point.x&&point.z===drag.point.z)return;
+    const point=entityMovePosition(s.project,drag.entity.id,{x:drag.entity.x+pick.x-drag.anchor.x,z:drag.entity.z+pick.z-drag.anchor.z,...(pick.y!==undefined&&drag.anchor.y!==undefined?{y:(drag.entity.y??1.1)+pick.y-drag.anchor.y}:{})},s.snapping);
+    if(!point || point.x===drag.point.x&&point.z===drag.point.z&&point.y===drag.point.y)return;
     drag.point=point;
     const dx=point.x-drag.entity.x,dz=point.z-drag.entity.z;
     for(const item of s.project.entities){
       if(item.id!==drag.entity.id && item.hostId!==drag.entity.id&&item.switchWallId!==drag.entity.id)continue;
-      const object=this.objects.get(item.id);if(object)object.position.set(item.x+dx,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.y??0),item.z+dz);
+      const object=this.objects.get(item.id);if(object)object.position.set(item.x+dx,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.id===drag.entity.id?(point.y??item.y??0):(item.y??0)),item.z+dz);
     }
     // A sliding door/window changes just its host wall's hole, not the whole scene.
     if(drag.entity.hostId){
@@ -370,7 +386,7 @@ export class HabitatEngine {
     if(active && pointerId!==null && this.renderer.domElement.hasPointerCapture(pointerId))this.renderer.domElement.releasePointerCapture(pointerId);
     this.callbacks.onDragState(null);
     if(active){
-      const changed=drag.point.x!==drag.entity.x || drag.point.z!==drag.entity.z;
+      const changed=drag.point.x!==drag.entity.x || drag.point.z!==drag.entity.z || drag.point.y!==undefined&&drag.point.y!==(drag.entity.y??0);
       const committed=commit&&changed&&this.callbacks.onMove(drag.entity.id,drag.point);
       if(!committed){this.rebuild();this.highlight();}
       this.dirty=true;
@@ -387,14 +403,18 @@ export class HabitatEngine {
     }
     const pick=this.hit(event);if(!pick)return;this.callbacks.onHover(pick.point);
     if(this.state.tool==='select'||this.state.tool==='move')return;
-    this.preview(pick.point);
+    this.preview(pick);
   }
-  private preview(point:{x:number;z:number}){
+  private preview(pick:Pick){
     this.dirty=true;
     if(!this.state)return;disposeObject(this.ghost);this.ghost.clear();
-    const s=this.state,quantize=(n:number)=>s.snapping?Math.round(n*4)/4:n;
+    const point=pick.point,s=this.state,quantize=(n:number)=>s.snapping?Math.round(n*4)/4:n;
     const x=quantize(point.x),z=quantize(point.z),floor=s.project.floors.find(f=>f.id===s.floorId)!;
-    if(s.tool==='place'&&!['door','window'].includes(s.placing)){
+    if(s.tool==='place'&&s.placing==='lightSwitch'){
+      const picked=s.project.entities.find(e=>e.id===pick.entityId),wall=s.project.entities.find(e=>e.id===(picked?.kind==='wall'?picked.id:picked?.hostId??picked?.switchWallId)&&e.kind==='wall'&&e.floorId===s.floorId);
+      const item=wall?attachLightSwitch(s.project,wall.id,pick.surface??pick.point,undefined,{side:pick.wallSide,snapping:s.snapping}):null;
+      if(item){const mesh=new THREE.Mesh(new THREE.BoxGeometry(item.w,item.h,item.d),new THREE.MeshBasicMaterial({color:'#2d9665',opacity:.65,transparent:true}));mesh.position.set(item.x,floor.elevation+(item.y??1.1)+item.h/2,item.z);mesh.rotation.y=item.rotation*Math.PI/180;this.ghost.add(mesh);}
+    }else if(s.tool==='place'&&!['door','window'].includes(s.placing)){
       const item={...catalogFor(s.placing),...s.placement};const mesh=new THREE.Mesh(new THREE.BoxGeometry(item.w,item.h,item.d),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.35,transparent:true}));mesh.position.set(x,floor.elevation+(item.y??0)+item.h/2,z);mesh.rotation.y=s.rotation*Math.PI/180;this.ghost.add(mesh);
     }else if(s.drawStart){
       const a=s.drawStart;
@@ -456,6 +476,8 @@ export class HabitatEngine {
     this.planCamera.position.set(0,elevation+80,0);this.planCamera.zoom=1;this.planControls.target.set(0,elevation,0);this.planCamera.updateProjectionMatrix();this.planControls.update();
   }
   zoom(direction:number){this.finishRotation(false);this.finishMove(false);this.dirty=true;if(this.state?.view==='plan'){this.planCamera.zoom=Math.max(.3,Math.min(12,this.planCamera.zoom*(direction>0?1.25:.8)));this.planCamera.updateProjectionMatrix();}else if(this.state?.view!=='walk'){const vec=this.camera.position.clone().sub(this.controls.target);vec.multiplyScalar(direction>0?.8:1.25);this.camera.position.copy(this.controls.target).add(vec);this.controls.update();}}
-  focus(id:string){this.finishRotation(false);this.finishMove(false);this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
+  focus(id:string){this.finishRotation(false);this.finishMove(false);this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);const item=this.state?.project.entities.find(e=>e.id===id),wall=this.state?.project.entities.find(e=>e.id===item?.switchWallId);
+    if(item&&wall){const face=worldPoint(wall,0,Math.sign(localPoint(wall,item.x,item.z).z)||1);this.camera.position.copy(center).add(new THREE.Vector3(face.x-wall.x,.12,face.z-wall.z).multiplyScalar(2.8));}
+    else this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
   dispose(){this.stopped=true;this.finishRotation(false);this.finishMove(false);this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn,capture} of this.listeners)target.removeEventListener(name,fn,capture);this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);this.realMaterials.dispose();this.environment?.dispose();if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();this.rotationRing.remove();}
 }

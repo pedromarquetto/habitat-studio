@@ -53,3 +53,30 @@ test('physical switch targeting requires a clear line of sight and a distance of
   const unlinked={...p,entities:p.entities.map(e=>e.id===sw.id?{...e,roomId:undefined}:e)};assert.equal(reachableSwitch(unlinked,[model],camera),null);
   disposeObject(model);disposeObject(obstacle);
 });
+
+
+test('manual switch mounting uses the clicked face and height without jumping around openings',async()=>{
+  const {switchMountPosition}=await import('../lib/habitat/switch-mount.ts');
+  for(const rotation of [0,37,90,-135]){
+    const p=d.emptyProject(),floor=p.floors[0].id,wall=d.entity('wall',floor,3,-2,{w:6,h:2.8,d:.22,rotation});p.entities.push(wall);
+    for(const side of [-1,1]){
+      const hit=d.worldPoint(wall,1.23,side*wall.d/2),mount=switchMountPosition(p,wall.id,{...hit,y:1.7},{side,snapping:true});assert.ok(mount);
+      const local=d.localPoint(wall,mount.x,mount.z);assert.ok(Math.abs(local.x-1.25)<1e-8);assert.ok(Math.abs(local.z-side*(.11+.025+.002))<1e-8);assert.ok(Math.abs(mount.y-1.65)<1e-8);assert.equal(mount.rotation,rotation+(side<0?180:0));
+      const sw=l.attachLightSwitch(p,wall.id,{...hit,y:1.7},undefined,{side});assert.ok(sw);assert.equal(sw.roomId,undefined);assert.ok(Math.abs(sw.y-1.635)<1e-8);assert.equal(d.ProjectSchema.safeParse({...p,entities:[...p.entities,sw]}).success,true);
+    }
+    const door=d.entity('door',floor,wall.x,wall.z,{hostId:wall.id,rotation:wall.rotation,d:wall.d,w:1});p.entities.push(door);
+    assert.equal(switchMountPosition(p,wall.id,{x:wall.x,z:wall.z,y:1.2},{side:1}),null);
+    assert.equal(l.attachLightSwitch(p,wall.id,{x:wall.x,z:wall.z,y:1.2}),null);
+    assert.ok(switchMountPosition(p,wall.id,{x:wall.x,z:wall.z,y:2.6},{side:1}));
+    const edge=switchMountPosition(p,wall.id,{...d.worldPoint(wall,20,0),y:40},{side:-1});assert.ok(edge);assert.ok(edge.y+.13<=wall.h);assert.ok(Math.abs(d.localPoint(wall,edge.x,edge.z).x)+.045<=wall.w/2);
+  }
+});
+test('switch movement stays flush, adjusts height, rejects openings, and tracks wall thickness',async()=>{
+  const {entityMovePosition}=await import('../lib/habitat/object-move.ts');
+  const p=d.emptyProject(),floor=p.floors[0].id,wall=d.entity('wall',floor,2,3,{rotation:47,w:6,d:.2});p.entities.push(wall);
+  const sw=l.attachLightSwitch(p,wall.id,{...d.worldPoint(wall,-1,.1),y:1.165},undefined,{side:1});p.entities.push(sw);
+  const point={...d.worldPoint(wall,1.28,5),y:1.4},move=entityMovePosition(p,sw.id,point,true);assert.ok(move);assert.ok(Math.abs(d.localPoint(wall,move.x,move.z).z-.127)<1e-8);assert.ok(Math.abs(d.localPoint(wall,move.x,move.z).x-1.3)<1e-8);assert.ok(Math.abs(move.y-1.4)<1e-8);
+  const door=d.entity('door',floor,wall.x,wall.z,{hostId:wall.id,rotation:wall.rotation,d:wall.d,w:1});p.entities.push(door);assert.equal(entityMovePosition(p,sw.id,{x:wall.x,z:wall.z,y:1.1},false),null);
+  const moved=d.updateEntity(p,wall.id,{rotation:-22,d:.4}),newWall=moved.entities.find(e=>e.id===wall.id),newSwitch=moved.entities.find(e=>e.id===sw.id);assert.ok(Math.abs(d.localPoint(newWall,newSwitch.x,newSwitch.z).z-.227)<1e-8);assert.equal(newSwitch.rotation,-22);assert.equal(d.ProjectSchema.safeParse(moved).success,true);
+  assert.equal(JSON.stringify(p.entities.find(e=>e.id===sw.id)),JSON.stringify(sw));
+});

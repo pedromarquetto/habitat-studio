@@ -14,7 +14,7 @@ Implemented: apartment/open-terrace penthouse generation, stair shaft and railin
 
 ## v0.4 — Interactive room lighting
 
-Implemented: per-room power, intensity and color; all-room controls per floor; visible wall switches and ceiling fixtures; installation into existing projects; editable circuit assignment; click/E activation with distance and visibility checks; saved state and player-position preservation during lighting edits.
+Implemented: per-room power, intensity and color; all-room controls per floor; visible wall switches and ceiling fixtures; installation into existing projects; editable circuit assignment; click/E activation with distance and visibility checks; saved state and player-position preservation during lighting edits. Switches now use actual wall-face placement, wall-constrained horizontal/vertical dragging, precise offset/height controls, face swapping and close focus.
 
 ## Next iteration
 
