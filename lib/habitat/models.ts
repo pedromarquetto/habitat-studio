@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lightSettings, switchRoom, circuitRoom } from './lighting';
 import { wallSections, openingBase, type Entity } from './domain';
 
 export function material(color:string,roughness=.8) {return new THREE.MeshStandardMaterial({color,roughness,metalness:.02});}
@@ -16,6 +17,14 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
   };
   const legs=(top=.75)=>{for(const x of [-.39,.39])for(const z of [-.36,.36])box(x,top/2,z,.07,top,.07,wood);};
   switch(e.kind){
+    case 'lightSwitch':{
+      const target=switchRoom({entities},e),on=target?lightSettings(target).on:false;
+      box(0,e.h/2,0,e.w,e.h,e.d,white);const rocker=box(0,e.h/2,e.d/2+.009,e.w*.48,e.h*.55,.014,dark);rocker.rotation.x=on?-.13:.13;
+      const indicator=material(on?'#f4cf65':'#67756f');indicator.emissive.set(on?'#dfaf2d':'#000000');indicator.emissiveIntensity=on?1:0;box(0,e.h*.82,e.d/2+.013,.016,.009,.01,indicator);break;
+    }
+    case 'ceilingLight':{
+      box(0,e.h*.65,0,e.w,e.h*.7,e.d,dark);const diffuser=box(0,e.h*.2,0,e.w*.9,e.h*.3,e.d*.9,white);diffuser.userData.lightEmitter=true;break;
+    }
     case 'wall':{
       const height=cutaway?Math.min(e.h,1.1):e.h;
       for(const s of wallSections(e,entities,height)){
@@ -193,6 +202,7 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
     const normalized=new THREE.Box3().setFromObject(group),offset=normalized.getCenter(new THREE.Vector3());offset.y=normalized.min.y;
     for(const child of group.children)child.position.sub(offset.clone().divide(group.scale));
   }
+  if(['lamp','ceilingLight'].includes(e.kind)){const room=circuitRoom({entities},e),own=lightSettings(e),circuit=room?lightSettings(room):null,on=own.on&&(circuit?.on??true);group.traverse(o=>{if(o instanceof THREE.Mesh&&(o.userData.lightEmitter||e.kind==='lamp'&&o.material===mat)){const m=o.material as THREE.MeshStandardMaterial;m.emissiveIntensity=on?.65*own.intensity*(circuit?.intensity??1):0;m.emissive.set(m.emissiveIntensity>0?(room?.light?.color??own.color):'#000000');}});}
   // Child picking always resolves to the stable document entity.
   group.traverse(obj=>{obj.userData.entityId=e.id;});
   // Materials not used by a model are disposed immediately.

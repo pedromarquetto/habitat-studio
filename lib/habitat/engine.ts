@@ -7,12 +7,15 @@ import { WalkLook } from './walk-controls';
 import { MoveGesture, MOVE_HOLD_MS, entityMovePosition } from './object-move';
 import { RotationDial, normalizeRotation } from './object-rotate';
 import { RealMaterials } from './real-materials';
+import { lightSources, sameWalkGeometry } from './lighting';
+import { reachableSwitch, type SwitchTarget } from './light-interaction';
+export type { SwitchTarget } from './light-interaction';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export interface EngineState {project:Project;floorId:string;view:View;realMode:boolean;lighting:'day'|'night';isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null}
 export interface Pick {point:{x:number;z:number};entityId:string|null}
 export interface DragStatus {entityId:string;phase:'holding'|'moving'|'rotating';rotation?:number}
-export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:{x:number;z:number})=>boolean;onRotate:(id:string,rotation:number)=>boolean}
+export interface EngineCallbacks {onToggleLight:(id:string)=>void;onSwitchTarget:(target:SwitchTarget|null)=>void;onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:{x:number;z:number})=>boolean;onRotate:(id:string,rotation:number)=>boolean}
 
 export class HabitatEngine {
   readonly renderer:THREE.WebGLRenderer|SVGRenderer;
@@ -35,7 +38,9 @@ export class HabitatEngine {
   private rotationRing=document.createElement('div');private rotationHandle=document.createElement('button');
   private realMaterials=new RealMaterials();private environment:THREE.WebGLRenderTarget|null=null;
   private hemisphere=new THREE.HemisphereLight('#ffffff','#c4c5b5',2.5);
+  private fallbackAmbient=new THREE.AmbientLight('#ffffff',.55);
   private lightFloorId:string|null=null;
+  private switchPress:{pointerId:number;x:number;y:number;moved:boolean}|null=null;
   private sun=new THREE.DirectionalLight('#fff8e9',3.2);private roomLights=new THREE.Group();
   private rotating:{entity:Entity;pointerId:number;dial:RotationDial;rotation:number}|null=null;
   private listeners:{target:EventTarget;name:string;fn:EventListener;capture:boolean}[]=[];
@@ -55,7 +60,7 @@ export class HabitatEngine {
     this.rotationHandle.setAttribute('aria-label','Alça de rotação do objeto');
     this.rotationRing.appendChild(this.rotationHandle);host.appendChild(this.rotationRing);this.scene.background=new THREE.Color('#e8ede9');this.scene.fog=new THREE.Fog('#e8ede9',60,160);
     this.scene.add(this.hemisphere,this.roomLights,this.sun.target);
-    if(this.software)this.scene.add(new THREE.AmbientLight('#ffffff',.55));
+    if(this.software)this.scene.add(this.fallbackAmbient);
     const sun=this.sun;sun.intensity=this.software?.8:3.2;sun.position.set(-14,25,12);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;sun.shadow.normalBias=.03;this.scene.add(sun);
     const ground=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshStandardMaterial({color:'#e0e7e0',roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.18;ground.receiveShadow=true;ground.visible=!this.software;this.scene.add(ground);
     this.grid=new THREE.GridHelper(80,80,'#aabeb0','#c6d2c9');this.grid.position.y=-.16;this.scene.add(this.grid);
@@ -67,10 +72,11 @@ export class HabitatEngine {
     this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(host);this.resize();
     this.listen(this.renderer.domElement,'pointerdown',e=>{
       const event=e as PointerEvent;
-      this.suppressedPick=null;
+      this.suppressedPick=null;this.pointerStart={x:event.clientX,y:event.clientY};
       if(this.moveGesture.pointerId!==null && this.moveGesture.pointerId!==event.pointerId)this.finishMove(false);
       if(this.state?.view==='walk'){
         if(this.look.begin(event)){
+          this.switchPress={pointerId:event.pointerId,x:event.clientX,y:event.clientY,moved:false};
           event.preventDefault();this.renderer.domElement.focus({preventScroll:true});
           this.renderer.domElement.setPointerCapture(event.pointerId);this.renderer.domElement.style.cursor='grabbing';this.callbacks.onLook(true);
         }
@@ -104,7 +110,12 @@ export class HabitatEngine {
       if(active){this.previewMove(event);event.stopImmediatePropagation();}
       this.finishMove(active);
     },true);
-    this.listen(this.renderer.domElement,'pointerup',e=>{const event=e as PointerEvent;this.endLook(event.pointerId);this.pick(event);});
+    this.listen(this.renderer.domElement,'pointerup',e=>{
+      const event=e as PointerEvent,press=this.switchPress;
+      const click=press?.pointerId===event.pointerId&&!press.moved&&event.button===0&&Math.hypot(event.clientX-press.x,event.clientY-press.y)<=5;
+      this.endLook(event.pointerId);
+      if(this.state?.view==='walk'&&click){const target=this.switchTarget(event);if(target)this.callbacks.onToggleLight(target.id);}else this.pick(event);
+    });
     this.listen(this.renderer.domElement,'pointercancel',e=>{const id=(e as PointerEvent).pointerId;this.endLook(id);if(id===this.moveGesture.pointerId)this.finishMove(false);});
     this.listen(this.renderer.domElement,'lostpointercapture',e=>{const id=(e as PointerEvent).pointerId;this.endLook(id);if(id===this.moveGesture.pointerId)this.finishMove(false);});
     this.listen(this.renderer.domElement,'wheel',e=>{if(this.moveGesture.phase==='moving'){e.preventDefault();e.stopImmediatePropagation();}else this.finishMove(false);},true);
@@ -149,7 +160,7 @@ export class HabitatEngine {
       if(next.view==='walk'){this.player=findSpawn(next.project,next.floorId);this.callbacks.onPosition(this.player);}
       else{this.controls.target.y=elevation;this.planControls.target.set(0,elevation,0);this.planCamera.position.set(0,elevation+80,0);this.planControls.update();}
     }
-    if(next.view==='walk'&&docChanged&&previous)this.player=findSpawn(next.project,next.floorId);
+    if(next.view==='walk'&&docChanged&&previous&&!sameWalkGeometry(previous.project,next.project))this.player=findSpawn(next.project,next.floorId);
     if(next.view!=='walk'&&(!previous||docChanged&&previous.floorId!==next.floorId))this.home();
     this.highlight();
     if(previous?.tool!==next.tool||previous?.placing!==next.placing||previous?.view!==next.view){disposeObject(this.ghost);this.ghost.clear();}
@@ -178,6 +189,9 @@ export class HabitatEngine {
     this.scene.background=new THREE.Color(real?(night?'#111d32':'#bcd9ec'):'#e8ede9');
     this.scene.fog=new THREE.Fog(real?(night?'#111d32':'#bcd9ec'):'#e8ede9',real?70:60,real?220:160);
     this.hemisphere.intensity=real?(night?.22:1.15):2.5;this.hemisphere.color.set(real?'#cce2ff':'#ffffff');
+    this.fallbackAmbient.intensity=night?.04:.55;
+    // SVGRenderer does not multiply ambient color by its intensity.
+    this.fallbackAmbient.color.setRGB(night?.04:.35,night?.04:.35,night?.04:.35);
     this.sun.intensity=real?(night?.16:(this.software?1:3.4)):(this.software?.8:3.2);this.sun.color.set(night?'#8ba9dd':'#fff1d9');
     if(this.renderer instanceof THREE.WebGLRenderer){
       this.renderer.toneMappingExposure=real?(night?1.2:1):1.4;
@@ -188,17 +202,20 @@ export class HabitatEngine {
     this.sun.target.position.copy(center);this.sun.position.copy(center).add(new THREE.Vector3(-span,span*1.6,span*.8));
     const shadow=this.sun.shadow.camera;shadow.left=shadow.bottom=-span;shadow.right=shadow.top=span;shadow.far=span*6;shadow.updateProjectionMatrix();
     disposeObject(this.roomLights);this.roomLights.clear();
-    if(!real)return;
     const elevation=s.project.floors.find(f=>f.id===lightFloorId)!.elevation;
-    const rooms=s.project.entities.filter(e=>e.floorId===lightFloorId&&e.kind==='room'&&e.w>=2&&e.d>=2).slice(0,8);
-    for(const room of rooms){
-      const light=new THREE.PointLight('#ffd6a3',night?32:12,Math.max(8,Math.min(14,Math.max(room.w,room.d)*1.5)),2);
-      light.position.set(room.x,elevation+2.55,room.z);this.roomLights.add(light);
-      if(!/terraço/i.test(room.name)){
-        const fixture=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.035,16),new THREE.MeshStandardMaterial({color:'#fff4d5',emissive:'#ffd6a3',emissiveIntensity:night?3:.5}));fixture.position.set(room.x,elevation+2.77,room.z);this.roomLights.add(fixture);
+    const sources=lightSources(s.project,lightFloorId);
+    for(const source of sources){
+      if(real&&source.on&&source.intensity>0&&this.roomLights.children.filter(o=>o instanceof THREE.PointLight).length<16){
+        const power=this.software?(night?.85:.25):(night?32:12);
+        const light=new THREE.PointLight(source.color,power*source.intensity,this.software?8:14,2);light.position.set(source.x,elevation+source.y,source.z);this.roomLights.add(light);
+      }
+      if(source.virtual&&(s.view==='walk'||!s.cutaway&&s.view!=='plan')){
+        const mat=new THREE.MeshStandardMaterial({color:source.on?'#fff4d5':'#697570',emissive:source.on&&source.intensity>0?source.color:'#000000',emissiveIntensity:source.on?(real?2:.65)*source.intensity:0});
+        const fixture=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.06,16),mat);fixture.position.set(source.x,elevation+source.y,source.z);this.roomLights.add(fixture);
       }
     }
   }
+
   private label(e:Entity,model:THREE.Group){
     if(e.w<2||e.d<2)return;
     if(this.software){
@@ -223,6 +240,12 @@ export class HabitatEngine {
     const hits=this.raycaster.intersectObjects(this.root.children,true);
     const object=hits.find(hit=>Boolean(hit.object.userData.entityId));
     return {point:{x:point.x,z:point.z},entityId:object?.object.userData.entityId??null};
+  }
+  private switchTarget(event?:PointerEvent):SwitchTarget|null{
+    const s=this.state;if(!s||s.view!=='walk')return null;
+    const mouse=new THREE.Vector2();
+    if(event){const rect=this.renderer.domElement.getBoundingClientRect();mouse.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);}
+    return reachableSwitch(s.project,this.root.children,this.camera,mouse);
   }
   private pick(event:PointerEvent){
     if(event.pointerId===this.suppressedPick){this.suppressedPick=null;return;}
@@ -273,7 +296,7 @@ export class HabitatEngine {
     // updateEntity rotates hosted openings around a wall's center as well.
     const preview=updateEntity(s.project,drag.entity.id,{rotation});
     for(const item of preview.entities){
-      if(item.id!==drag.entity.id&&item.hostId!==drag.entity.id)continue;
+      if(item.id!==drag.entity.id&&item.hostId!==drag.entity.id&&item.switchWallId!==drag.entity.id)continue;
       const object=this.objects.get(item.id);if(!object)continue;
       object.position.set(item.x,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.y??0),item.z);object.rotation.y=item.rotation*Math.PI/180;
     }
@@ -322,7 +345,7 @@ export class HabitatEngine {
     drag.point=point;
     const dx=point.x-drag.entity.x,dz=point.z-drag.entity.z;
     for(const item of s.project.entities){
-      if(item.id!==drag.entity.id && item.hostId!==drag.entity.id)continue;
+      if(item.id!==drag.entity.id && item.hostId!==drag.entity.id&&item.switchWallId!==drag.entity.id)continue;
       const object=this.objects.get(item.id);if(object)object.position.set(item.x+dx,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.y??0),item.z+dz);
     }
     // A sliding door/window changes just its host wall's hole, not the whole scene.
@@ -356,6 +379,7 @@ export class HabitatEngine {
   private hover(event:PointerEvent){
     if(!this.state)return;
     if(this.state.view==='walk'){
+      if(this.switchPress?.pointerId===event.pointerId&&Math.hypot(event.clientX-this.switchPress.x,event.clientY-this.switchPress.y)>5)this.switchPress.moved=true;
       if(this.look.pointerId===event.pointerId&&event.pointerType!=='touch'&&!(event.buttons&1)){this.endLook(event.pointerId);return;}
       const delta=this.look.move(event,this.state.lookSensitivity);
       if(delta){this.yaw-=delta.yaw;this.pitch=Math.max(-1.3,Math.min(1.3,this.pitch-delta.pitch));this.dirty=true;}
@@ -382,10 +406,12 @@ export class HabitatEngine {
     }
   }
   private key(event:KeyboardEvent,down:boolean){
+    if(!down){this.keys.delete(event.code);return;}
     const target=event.target as HTMLElement;
     if(target.closest('input,textarea,select,[role="dialog"],[role="combobox"],[contenteditable="true"]'))return;
     if(event.code==='Escape'&&down&&this.moveGesture.pointerId!==null){event.preventDefault();this.finishMove(false);return;}
     if(this.state?.view!=='walk')return;
+    if(event.code==='KeyE'&&down&&!event.repeat){const target=this.switchTarget();if(target){event.preventDefault();this.callbacks.onToggleLight(target.id);}return;}
     if(event.code==='Escape'&&down){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();return;}
     if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(event.code)){event.preventDefault();if(down)this.keys.add(event.code);else this.keys.delete(event.code);}
   }
@@ -402,7 +428,7 @@ export class HabitatEngine {
       this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed);
       if(this.state.realMode){const floor=this.state.project.floors.filter(f=>f.elevation<=this.player.feet+.1).sort((a,b)=>b.elevation-a.elevation)[0];if(floor&&floor.id!==this.lightFloorId)this.configureLighting(floor.id);}
       this.camera.position.set(this.player.x,this.player.feet+1.65,this.player.z);this.camera.rotation.set(this.pitch,this.yaw,0,'YXZ');
-      if(time-this.lastPositionUpdate>200){this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;}
+      if(time-this.lastPositionUpdate>200){this.callbacks.onSwitchTarget(this.switchTarget());this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;}
     }else if(this.moveGesture.phase!=='moving'&&!this.rotating){const orbitChanged=this.controls.update(),planChanged=this.planControls.update();if(orbitChanged||planChanged)this.dirty=true;}
     if(!this.software||(this.dirty&&time-this.lastRender>66)){this.positionRotationRing();this.renderer.render(this.scene,this.activeCamera);this.lastRender=time;this.dirty=false;}
     this.frame=requestAnimationFrame(t=>this.animate(t));
@@ -410,9 +436,11 @@ export class HabitatEngine {
   private endLook(pointerId?:number){
     const active=this.look.pointerId;
     if(!this.look.end(pointerId))return;
+    this.switchPress=null;
     if(active!==null&&this.renderer.domElement.hasPointerCapture(active))this.renderer.domElement.releasePointerCapture(active);
     this.renderer.domElement.style.cursor=this.state?.view==='walk'?'grab':this.state?.tool==='select'?'grab':this.state?.tool==='move'?'move':'crosshair';this.callbacks.onLook(false);
   }
+  pauseInput(){this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();}
   setTouchMove(forward:number,right:number){this.touchMove={forward,right};}
   step(forward:number,right:number){
     if(this.state?.view!=='walk')return;

@@ -12,6 +12,10 @@ Implemented: house/terrain starters, outdoor landscaping catalog, open gate and 
 
 Implemented: apartment/open-terrace penthouse generation, stair shaft and railings, flat roof slabs and pergolas, eight new appliances, eight woodwork items, above-floor object elevation, editable finishes and initial Real mode with PBR maps, day/night room lighting and first-person exploration. Hold-to-move and circular rotation handles are also implemented.
 
+## v0.4 — Interactive room lighting
+
+Implemented: per-room power, intensity and color; all-room controls per floor; visible wall switches and ceiling fixtures; installation into existing projects; editable circuit assignment; click/E activation with distance and visibility checks; saved state and player-position preservation during lighting edits.
+
 ## Next iteration
 
 - Improve product-specific visual detail and expand the modular woodwork catalog.

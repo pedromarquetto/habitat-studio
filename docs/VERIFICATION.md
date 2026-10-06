@@ -127,3 +127,21 @@ WebGL is unavailable in the test browser. Its notice is visible in Real mode; GP
 
 ![Penthouse and woodwork](penthouse-real.jpg)
 ![Real mode in the compatibility renderer](real-mode.jpg)
+
+
+# v0.4 lighting verification
+
+## Automated
+
+38 regression tests pass. Four new tests cover nonmutating/idempotent fixture installation and opening avoidance; room-isolated power/intensity/color propagation and disabled emitters; wall attachment, floor reference remapping, deletion cleanup and schema rejection; and actual Three.js raycasting with range, wall occlusion and unlinked switches. TypeScript checking and the production build pass. No dependencies were added.
+
+## Browser
+
+The existing three-floor project (including its penthouse and custom cabinet) remained intact. Installing lights into its seven ground-floor rooms added one ceiling fixture and one switch per room. Hall power and 65% intensity survived reload; the other room controls remained independent. The lights panel works in both the editor and walking mode.
+
+In Real mode at night, clicking the physical Hall switch and pressing E both toggled its circuit. Dragging from the switch and back changed the viewing direction without changing its power. After walking from X=0.00, Z=-2.50 to X=-0.29, Z=-2.69, switching the light preserved that position. The physical indicator and nearby action label updated with the circuit state.
+
+![Per-room controls](lighting-controls.jpg)
+![Physical switch and nearby action](light-switch.jpg)
+
+These checks used the SVG compatibility renderer because this test browser has WebGL disabled. Compatibility lighting was checked for visible on/off behavior without overexposure; GPU light falloff, shadows, reflections and light occlusion were not verified here. Mobile layout was reviewed in source; physical touch and GPU testing remain pending.

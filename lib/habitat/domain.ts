@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object', 'slab', 'pergola', 'railing', 'microwave', 'washingMachine', 'dryer', 'dishwasher', 'oven', 'cooktop', 'hood', 'airConditioner', 'baseCabinet', 'wallCabinet', 'drawerUnit', 'bookshelf', 'wardrobe', 'closetPanel', 'countertop'] as const;
+export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object', 'slab', 'pergola', 'railing', 'microwave', 'washingMachine', 'dryer', 'dishwasher', 'oven', 'cooktop', 'hood', 'airConditioner', 'baseCabinet', 'wallCabinet', 'drawerUnit', 'bookshelf', 'wardrobe', 'closetPanel', 'countertop', 'lightSwitch', 'ceilingLight'] as const;
 export type Kind = typeof KINDS[number];
 export type View = '3d' | 'plan' | 'walk';
 export type Tool = 'select' | 'move' | 'wall' | 'room' | 'roof' | 'place' | 'area' | 'line';
@@ -10,6 +10,7 @@ export const ProductSourceSchema = z.object({
   dimensions: z.object({w:z.number().positive().max(100),h:z.number().positive().max(30),d:z.number().positive().max(100)}),
   measurementSource: z.enum(['page','manual','mixed']), evidence: z.array(z.string().max(250)).max(6),
 });
+export const LightSchema=z.object({on:z.boolean(),intensity:z.number().finite().min(0).max(2),color:z.string().regex(/^#[0-9a-fA-F]{6}$/)});
 export const EntitySchema = z.object({
   id: z.string().min(1).max(100), kind: z.enum(KINDS), name: z.string().max(120), floorId: z.string().min(1).max(100),
   x: z.number().finite().min(-200).max(200), z: z.number().finite().min(-200).max(200),
@@ -19,6 +20,7 @@ export const EntitySchema = z.object({
   w: z.number().finite().min(0.05).max(100), h: z.number().finite().min(0.05).max(30), d: z.number().finite().min(0.05).max(100),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/), apartment: z.string().max(80), hostId: z.string().max(100).optional(),
   product: ProductSourceSchema.optional(),
+  light:LightSchema.optional(), roomId:z.string().max(100).optional(), switchWallId:z.string().max(100).optional(),
 });
 export type Entity = z.infer<typeof EntitySchema>;
 export const FloorSchema = z.object({ id: z.string().min(1).max(100), name: z.string().min(1).max(80), elevation: z.number().finite().min(0).max(100) });
@@ -34,6 +36,8 @@ export const ProjectSchema = z.object({
   if (p.floors.some((f,i) => p.floors.some((other,j) => j < i && Math.abs(other.elevation-f.elevation) < 2.4))) ctx.addIssue({code:'custom',message:'Os andares precisam ter pelo menos 2,4 m de separação.'});
   for (const e of p.entities) {
     if (!floors.has(e.floorId)) ctx.addIssue({code:'custom',message:'Objeto com andar inexistente.'});
+    if(e.roomId){const room=p.entities.find(r=>r.id===e.roomId&&r.kind==='room'&&r.floorId===e.floorId);if(!room||!['lightSwitch','lamp','ceilingLight'].includes(e.kind))ctx.addIssue({code:'custom',message:'Circuito com cômodo inválido.'});}
+    if(e.switchWallId&&!p.entities.some(w=>w.id===e.switchWallId&&w.kind==='wall'&&w.floorId===e.floorId)||e.switchWallId&&e.kind!=='lightSwitch')ctx.addIssue({code:'custom',message:'Interruptor com parede inválida.'});
     if (e.kind === 'door' || e.kind === 'window') {
       const host = p.entities.find(w => w.id === e.hostId && w.kind === 'wall');
       if (!host || host.floorId !== e.floorId) ctx.addIssue({code:'custom',message:'Porta ou janela sem parede válida.'});
@@ -92,6 +96,8 @@ export const CATALOG: CatalogItem[] = [
   {kind:'bookshelf',name:'Estante',section:'woodwork',w:1.2,h:1.9,d:.35,color:'#a98b67',hint:'Prateleiras abertas'},
   {kind:'wardrobe',name:'Guarda-roupa',section:'woodwork',w:2.4,h:2.3,d:.65,color:'#b89c7f',hint:'Três portas de correr'},
   {kind:'closetPanel',name:'Painel ripado',section:'woodwork',w:2,h:2.5,d:.08,color:'#aa825a',hint:'Painel de marcenaria'},
+  {kind:'lightSwitch',name:'Interruptor',section:'structure',w:.09,h:.13,d:.05,color:'#f6f5ee',hint:'Clique em uma parede e vincule ao cômodo',y:1.1},
+  {kind:'ceilingLight',name:'Plafon',section:'furniture',w:.35,h:.08,d:.35,color:'#f3f1e5',hint:'Luminária de teto vinculada ao cômodo',y:2.7},
   {kind:'countertop',name:'Bancada',section:'woodwork',w:2,h:.05,d:.65,color:'#d4d2c8',hint:'Tampo sobre os módulos',y:.9},
 ];
 export const AREA_KINDS:Kind[]=['terrain','lawn','paving','pool','slab','pergola'];
@@ -169,7 +175,7 @@ export function collides(project:Project,x:number,z:number,feet:number):boolean 
       if(Math.abs(p.z)>e.d/2+PLAYER_RADIUS||Math.abs(p.x)>e.w/2+PLAYER_RADIUS)return false;
       return !project.entities.some(o=>o.kind==='door'&&o.hostId===e.id&&Math.abs(p.x-localPoint(e,o.x,o.z).x)<o.w/2-PLAYER_RADIUS&&feet+1.65<floor.elevation+o.h);
     }
-    if(['room','door','window','roof','slab','stairs','plant','lamp','terrain','lawn','paving'].includes(e.kind))return false;
+    if(['room','door','window','roof','slab','stairs','plant','lamp','lightSwitch','ceilingLight','terrain','lawn','paving'].includes(e.kind))return false;
     if(e.kind==='pergola'){const p=localPoint(e,x,z);return Math.abs(p.x)>e.w/2-.13-PLAYER_RADIUS&&Math.abs(p.x)<e.w/2+PLAYER_RADIUS&&Math.abs(p.z)>e.d/2-.13-PLAYER_RADIUS&&Math.abs(p.z)<e.d/2+PLAYER_RADIUS;}
     if(e.kind==='gate') { const p=localPoint(e,x,z); return Math.abs(p.z)<e.d/2+PLAYER_RADIUS && Math.abs(p.x)>e.w/2-.12-PLAYER_RADIUS && Math.abs(p.x)<e.w/2+PLAYER_RADIUS; }
     if(e.kind==='tree')return Math.hypot(x-e.x,z-e.z)<Math.min(e.w,e.d)*.08+PLAYER_RADIUS;
@@ -288,7 +294,7 @@ export function duplicateFloor(project:Project,sourceId:string):{project:Project
   const floor:Floor={id:uid(),name:`${project.floors.length}º andar`,elevation};
   const source=project.entities.filter(e=>e.floorId===sourceId&&e.kind!=='roof'&&catalogFor(e.kind).section!=='outdoor');
   const remap=new Map(source.map(e=>[e.id,uid()]));
-  const copies=source.map(e=>({...e,id:remap.get(e.id)!,floorId:floor.id,hostId:e.hostId?remap.get(e.hostId):undefined,apartment:e.apartment?e.apartment.replace(/\d+/,m=>String((project.floors.length+1)*100+(Number(m)%100))):''}));
+  const copies=source.map(e=>({...e,id:remap.get(e.id)!,floorId:floor.id,hostId:e.hostId?remap.get(e.hostId):undefined,roomId:e.roomId?remap.get(e.roomId):undefined,switchWallId:e.switchWallId?remap.get(e.switchWallId):undefined,apartment:e.apartment?e.apartment.replace(/\d+/,m=>String((project.floors.length+1)*100+(Number(m)%100))):''}));
   return{project:{...project,floors:[...project.floors,floor],entities:[...project.entities.filter(e=>e.kind!=='roof'),...copies,...project.entities.filter(e=>e.kind==='roof').map(e=>({...e,floorId:floor.id}))]},floorId:floor.id};
 }
 export function updateEntity(project:Project,id:string,patch:Partial<Entity>):Project {
@@ -296,8 +302,9 @@ export function updateEntity(project:Project,id:string,patch:Partial<Entity>):Pr
   const updated={...old,...patch};
   return {...project,entities:project.entities.map(e=>{
     if(e.id===id)return updated;
+    if(old.kind==='wall'&&e.switchWallId===id){const local=localPoint(old,e.x,e.z),pos=worldPoint(updated,local.x,local.z),side=Math.sign(local.z)||1;return {...e,...pos,rotation:updated.rotation+(side<0?180:0),floorId:updated.floorId};}
     if(old.kind==='wall'&&e.hostId===id){const local=localPoint(old,e.x,e.z),pos=worldPoint(updated,local.x,0);return {...e,...pos,rotation:updated.rotation,floorId:updated.floorId,d:updated.d};}
     return e;
   })};
 }
-export function removeEntity(project:Project,id:string):Project {return {...project,entities:project.entities.filter(e=>e.id!==id&&e.hostId!==id)};}
+export function removeEntity(project:Project,id:string):Project {return {...project,entities:project.entities.filter(e=>e.id!==id&&e.hostId!==id&&e.switchWallId!==id&&e.roomId!==id)};}

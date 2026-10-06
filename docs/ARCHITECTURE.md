@@ -36,7 +36,7 @@ An entity's optional `y` is the base elevation relative to its floor; omitted me
 
 Real mode is presentation state, separate from the document and undo history. It uses the same meshes, dimensions, collision and walking controller. Five small shared DataTextures provide repeatable wood, stone, fabric, metal and paint surface patterns and bump detail. Explicit entity finishes override catalog defaults; transparent glass retains its glass material. Box UVs follow meter dimensions. Model disposal releases local resources without disposing shared maps; the engine owns and releases the shared texture cache.
 
-Hardware rendering uses a cached PMREM environment from RoomEnvironment, directional shadows, tone-mapping exposure and up to eight room lights on the player's current floor. Day/night changes rebuild presentation without modifying the project. The walking loop changes light floors as the player's feet cross elevations. Renderer teardown disposes the PMREM target and surface textures. SVG mode shows the same geometry with reduced lighting fidelity and a visible WebGL-unavailable notice; it cannot show texture/bump maps, reflections or GPU shadows.
+Hardware rendering uses a cached PMREM environment from RoomEnvironment, directional shadows, tone-mapping exposure and up to 16 active light sources on the player's current floor. Day/night changes rebuild presentation without modifying the project. The walking loop changes light floors as the player's feet cross elevations. Renderer teardown disposes the PMREM target and surface textures. SVG mode shows the same geometry with reduced lighting fidelity and a visible WebGL-unavailable notice; it cannot show texture/bump maps, reflections or GPU shadows.
 
 ## Agent interoperability
 
@@ -68,3 +68,14 @@ The engine owns a small DOM rotation dial projected at the selected object's cen
 An unmodified primary left press captures the handle's pointer, drains orbit damping and disconnects camera controls. Document capture listeners own the subsequent move/up events. RotationDial accumulates signed screen angles continuously across ±180°; points too close to the center are ignored. Encaixe snaps to 15°, while Shift bypasses snapping. Click/jitter preserves a pre-existing exact angle.
 
 Rendering previews modify selected model transforms without changing the project. For a wall, updateEntity computes the preview positions and angles of its hosted openings. Release commits through onRotate once; Escape, pointer cancellation/capture loss, window blur, visibility loss, another pointer, resize, selection/document/view/tool changes and teardown restore the original document. The controls reconnect once ownership ends. Keyboard adjustments, the exact field and the 90° toolbar action reuse normal validated history and autosave. Hosted openings cannot rotate independently.
+
+
+## Room circuits and switches
+
+The optional `light` object stores power, finite intensity from 0 to 2, and a hex light color. Lights and switches can reference a room on their own floor through `roomId`; a switch can also reference its mounting wall through `switchWallId`. Schema validation rejects dangling or cross-floor references. Floor duplication remaps both references, wall transformations preserve switch offsets, and room/wall deletion removes dependent objects. Existing version-1 projects remain valid without these fields.
+
+`installRoomLighting` adds missing ceiling fixtures and wall switches without mutating its input or duplicating existing items. Wall placement avoids door/window openings and faces the circuit's room. Fixture power is gated by the room circuit; fixture intensity multiplies circuit intensity, and an explicitly configured circuit color overrides fixture color. Rooms without explicit ceiling fixtures retain a virtual ceiling light.
+
+`reachableSwitch` raycasts the actual meshes. Only a first-hit linked switch within 2.5 m can be activated, so other geometry blocks interaction. A primary click toggles only if the gesture never exceeds five pixels; dragging and returning to its origin still counts as navigation. E acts once per non-repeated keydown. Opening the lighting dialog pauses movement input. Changes that preserve `sameWalkGeometry` do not respawn or reorient the player.
+
+Real mode builds lights for the player's physical floor, capped at 16 active sources. SVGRenderer ignores some material/light intensity properties and has no shadow occlusion: compatibility rendering therefore uses reduced point-light power, ambient color adjustment at night, and black emissive colors for disabled fixtures. It is an approximate preview; hardware lighting remains the preferred renderer.

@@ -46,6 +46,18 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 
 ![Penthouse and woodwork catalog](docs/penthouse-real.jpg)
 
+## v0.4 — Lights and visible switches
+
+- **Luzes** opens per-floor room controls: switch individual rooms or all rooms on/off, set intensity from 0–200%, and choose a light color. The same controls are available in a selected room or light fixture's inspector.
+- New **Interruptor** and **Plafon** catalog entries. Place a switch on a wall and select its room circuit; ceiling lights and floor lamps join their containing room automatically, with an editable circuit assignment.
+- New house/building starters and generated penthouses include ceiling lights and visible switches. Existing saved projects remain intact: choose **Luzes → Instalar luzes e interruptores** on each desired floor to add missing fixtures. Installing twice does not duplicate them.
+- During walking or Real mode, click a visible switch within 2.5 m, aim at it and press **E**, or use its on-screen action. Walls and furniture block activation. Dragging over a switch turns the camera without toggling it.
+- Room power gates all its assigned fixtures; individual fixture power remains independent. Light intensity, color and circuit assignments persist through autosave, undo/redo and JSON import/export. Switching lights preserves the player's position and viewing direction.
+- Real mode renders up to 16 active light sources on the player's current floor. WebGL provides the full lighting effects; SVG compatibility lighting is approximate and lacks occlusion and shadows.
+
+![Room light controls](docs/lighting-controls.jpg)
+![Visible switch during exploration](docs/light-switch.jpg)
+
 ## Moving objects
 
 Hold an object briefly before dragging in 3D or floor-plan view. The **Mover** tool is also available directly in the viewport toolbar. The camera stays fixed during object movement; empty-space drags in selection mode navigate.
@@ -100,6 +112,7 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 | Ctrl/Cmd + Shift + Z | Redo |
 | Ctrl/Cmd + S | Save in the current browser |
 | Esc | Cancel object movement / rotation / drawing / stop camera drag |
+| E | Activate the visible nearby switch in walking mode |
 | WASD | Walk |
 | Shift | Walk faster |
 | Arrow keys | Look around in walking mode |
@@ -110,6 +123,8 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 - `lib/habitat/models.ts`: procedural 3D geometry and material/resource lifecycle.
 - `lib/habitat/penthouse.ts`: nonmutating top-floor generation, terrace slabs and stair openings.
 - `lib/habitat/real-materials.ts`: shared numeric PBR surface maps and geometry-preserving finish application.
+- `lib/habitat/lighting.ts`: room circuits, fixture generation and lighting state.
+- `lib/habitat/light-interaction.ts`: nearby-switch visibility and range checks.
 - `lib/habitat/engine.ts`: cameras, orbit and walking controls, picking, previews and renderers.
 - `lib/habitat/object-move.ts`: gesture arbitration, grid snapping and hosted-opening constraints.
 - `lib/habitat/object-rotate.ts`: continuous dial angles, wraparound and optional rotation snapping.
