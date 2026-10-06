@@ -47,3 +47,12 @@ Entities optionally hold `product` provenance: source URL/photo, brand/model, co
 `MoveGesture` distinguishes primary presses, seven-pixel pre-hold jitter, navigation and movement. A 450 ms hold activates object movement in selection mode; the explicit Move tool activates it immediately. Captured pointer movement runs before OrbitControls document listeners. Controls disconnect during object movement and reconnect when it ends; pointer capture handles drops outside the viewport. Floor-plan left drags and one-finger drags pan when navigating.
 
 The engine projects onto the active floor plane and retains the initial object-to-pointer offset. Preview changes only model transforms and, for sliding openings, the host wall geometry. React commits the validated document once on release, preserving one undo entry and avoiding document rebuilds for every pointer move. Wall movement retains hosted opening offsets. Opening movement clamps along the host wall and rejects overlap; other entities retain dimensions and product metadata. Esc, lost capture, pointer cancellation, blur, hidden document, resize and editor context changes discard the preview.
+
+
+## Object rotation
+
+The engine owns a small DOM rotation dial projected at the selected object's center. It works with both renderers and hides for walkthroughs, inactive-floor selections, hosted openings and placement tools. Only the handle receives pointer input; the ring itself lets events pass through to normal selection/navigation.
+
+An unmodified primary left press captures the handle's pointer, drains orbit damping and disconnects camera controls. Document capture listeners own the subsequent move/up events. RotationDial accumulates signed screen angles continuously across ±180°; points too close to the center are ignored. Encaixe snaps to 15°, while Shift bypasses snapping. Click/jitter preserves a pre-existing exact angle.
+
+Rendering previews modify selected model transforms without changing the project. For a wall, updateEntity computes the preview positions and angles of its hosted openings. Release commits through onRotate once; Escape, pointer cancellation/capture loss, window blur, visibility loss, another pointer, resize, selection/document/view/tool changes and teardown restore the original document. The controls reconnect once ownership ends. Keyboard adjustments, the exact field and the 90° toolbar action reuse normal validated history and autosave. Hosted openings cannot rotate independently.

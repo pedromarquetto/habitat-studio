@@ -41,6 +41,12 @@ Hold an object briefly before dragging in 3D or floor-plan view. The **Mover** t
 
 ![Object movement and position inspector](docs/object-move.jpg)
 
+## Rotating objects
+
+Select a free object in 3D or floor-plan view and drag its circular rotation handle. The camera stays fixed. **Encaixe** snaps rotation to 15°; hold Shift or disable Encaixe for free rotation. Release to commit one undo entry, or Esc to cancel. The **Girar** toolbar button and **R** turn 90°; the property inspector accepts an exact angle. A focused handle also supports arrow keys (15°, or 1° with Shift). Hosted doors/windows follow their wall's rotation.
+
+![Rotation handle and exact angle](docs/object-rotation.jpg)
+
 ## Run locally
 
 Requires Node.js 22.15+ and pnpm 11+. No API keys or paid services are required.
@@ -82,7 +88,7 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 | Ctrl/Cmd + Z | Undo |
 | Ctrl/Cmd + Shift + Z | Redo |
 | Ctrl/Cmd + S | Save in the current browser |
-| Esc | Cancel object movement / drawing / stop camera drag |
+| Esc | Cancel object movement / rotation / drawing / stop camera drag |
 | WASD | Walk |
 | Shift | Walk faster |
 | Arrow keys | Look around in walking mode |
@@ -93,6 +99,7 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 - `lib/habitat/models.ts`: procedural 3D geometry and material/resource lifecycle.
 - `lib/habitat/engine.ts`: cameras, orbit and walking controls, picking, previews and renderers.
 - `lib/habitat/object-move.ts`: gesture arbitration, grid snapping and hosted-opening constraints.
+- `lib/habitat/object-rotate.ts`: continuous dial angles, wraparound and optional rotation snapping.
 - `lib/habitat/walk-controls.ts`: primary-pointer drag ownership and normalized mouse/touch sensitivity.
 - `components/habitat/Studio.tsx`: editor actions, history, property panels and persistence.
 - `components/habitat/Viewport.tsx`: client-side renderer lifecycle and graceful failure handling.

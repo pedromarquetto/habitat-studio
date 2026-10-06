@@ -83,3 +83,26 @@ Verified in the supervised SVG preview:
 Fast pre-hold movement and cancellation are covered by the gesture tests; the browser automation uses a held drag. Hardware-accelerated WebGL, physical touch gestures and keyboard cancellation during a continuously held mouse press still need an interactive device check.
 
 ![Movement tool and selected sofa](object-move.jpg)
+
+
+# Object rotation update
+
+## Automated
+
+29 tests pass. Three new cases cover click/jitter preservation, center rejection, exact versus 15° angles, normalization and continuous wraparound; wall rotation preserves hosted opening offsets and valid references; imported furniture retains positions, dimensions and product metadata. TypeScript passes. Production packaging is checked by the publishing workflow.
+
+## Browser
+
+Verified in the supervised SVG preview:
+
+- Dragging the sofa's handle in plan view changed 0° to 270°, with identical rendered room-label transforms (fixed camera).
+- A single undo restored 0°; redo restored 270°. Position and dimensions stayed unchanged.
+- ArrowLeft changed 270° to 285°; Shift+ArrowRight changed 285° to 284°.
+- Handle dragging in perspective 3D changed 284° to 180°, with identical camera-label transforms.
+- Reload retained 180° and the original position/dimensions.
+- The exact angle field accepted 45°; the visible Girar button changed it to 135° and undo restored 45°.
+- The selected-object ring, degree label, visible Girar toolbar button, Encaixe control and property instructions are legible together.
+
+Cancellation paths were reviewed in the event lifecycle; continuously held pointer cancellation, physical touch and hardware WebGL were not exercised by this browser check.
+
+![Selected sofa rotated 45 degrees](object-rotation.jpg)
