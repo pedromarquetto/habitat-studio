@@ -1,0 +1,113 @@
+import * as THREE from 'three';
+import { wallSections, openingBase, type Entity } from './domain';
+
+export function material(color:string,roughness=.8) {return new THREE.MeshStandardMaterial({color,roughness,metalness:.02});}
+export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group {
+  const group=new THREE.Group();group.userData.entityId=e.id;
+  const mat=material(e.color);
+  const dark=material('#46524e'),white=material('#f2efe7'),wood=material('#956e4e');
+  const box=(x:number,y:number,z:number,w:number,h:number,d:number,m:THREE.Material=mat)=>{
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
+  };
+  const cylinder=(x:number,y:number,z:number,r:number,h:number,m:THREE.Material=mat)=>{
+    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,18),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
+  };
+  const legs=(top=.75)=>{for(const x of [-.39,.39])for(const z of [-.36,.36])box(x,top/2,z,.07,top,.07,wood);};
+  switch(e.kind){
+    case 'wall':{
+      const height=cutaway?Math.min(e.h,1.1):e.h;
+      for(const s of wallSections(e,entities,height)){
+        const mesh=box(s.x,s.y,0,s.w,s.h,e.d);
+        const edge=new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry),new THREE.LineBasicMaterial({color:'#d1d0c7'}));edge.position.copy(mesh.position);group.add(edge);
+      }
+      break;
+    }
+    case 'room':{
+      box(0,-e.h/2,0,e.w,e.h,e.d);
+      // Subtle plank lines preserve metric geometry rather than using external textures.
+      const lineMat=new THREE.LineBasicMaterial({color:new THREE.Color(e.color).multiplyScalar(.88)});
+      const points:THREE.Vector3[]=[];
+      for(let x=-e.w/2+.35;x<e.w/2;x+=.35)points.push(new THREE.Vector3(x,.003,-e.d/2),new THREE.Vector3(x,.003,e.d/2));
+      group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),lineMat));
+      break;
+    }
+    case 'door': case 'window':{
+      const base=openingBase(e),height=cutaway?Math.min(e.h,Math.max(0,1.1-base)):e.h;
+      if(height<=0)break;
+      box(-e.w/2,base+height/2,0,.06,height,e.d+.06,dark);
+      box(e.w/2,base+height/2,0,.06,height,e.d+.06,dark);
+      if(!cutaway)box(0,base+e.h,0,e.w+.08,.08,e.d+.06,dark);
+      if(e.kind==='window'){
+        box(0,base,0,e.w,.07,e.d+.1,dark);
+        const glass=new THREE.MeshPhysicalMaterial({color:e.color,transparent:true,opacity:.28,roughness:.15,metalness:.15,depthWrite:false});
+        box(0,base+height/2,0,e.w,height,.025,glass);
+        box(0,base+height/2,0,.035,height,.04,dark);
+      }else{
+        // A permanently open leaf makes doorways traversable in this first version.
+        const leaf=box(-e.w/2+(e.w*.14),height/2, e.w*.42,e.w*.3,height*.95,.05);
+        leaf.rotation.y=-Math.PI/2;
+      }
+      break;
+    }
+    case 'roof':{
+      const shape=new THREE.Shape();shape.moveTo(-e.w/2,0);shape.lineTo(0,e.h);shape.lineTo(e.w/2,0);shape.closePath();
+      const geometry=new THREE.ExtrudeGeometry(shape,{depth:e.d,bevelEnabled:false});
+      const mesh=new THREE.Mesh(geometry,mat);mesh.position.set(0,2.95,-e.d/2);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);
+      break;
+    }
+    case 'stairs':{
+      const steps=Math.max(8,Math.ceil(e.h/.18));
+      for(let i=0;i<steps;i++){const h=(i+1)*e.h/steps;box(0,h/2,-e.d/2+(i+.5)*e.d/steps,e.w,h,e.d/steps);}
+      const railMat=material('#536761');
+      for(const side of [-1,1]){
+        for(let i=0;i<5;i++){const t=i/4;box(side*e.w/2,t*e.h+.5,-e.d/2+t*e.d,.035,1,.035,railMat);}
+        const rail=box(side*e.w/2,e.h/2+1,0,.045,Math.hypot(e.h,e.d),.045,railMat);rail.rotation.x=Math.atan2(e.d,e.h);
+      }
+      break;
+    }
+    default:{
+      group.scale.set(e.w,e.h,e.d);
+      switch(e.kind){
+        case 'sofa':
+          box(0,.18,0,.95,.28,.95);box(0,.68,-.38,.94,.64,.2);box(-.44,.48,0,.14,.65,1);box(.44,.48,0,.14,.65,1);
+          for(const x of [-.26,0,.26])box(x,.44,.06,.25,.22,.72);
+          for(const x of [-.3,.3]){const cushion=box(x,.67,-.18,.25,.28,.14,white);cushion.rotation.z=x*.3;}break;
+        case 'armchair':box(0,.3,0,1,.45,.9);box(0,.75,-.36,.9,.5,.22);box(-.42,.6,0,.16,.5,1);box(.42,.6,0,.16,.5,1);break;
+        case 'bed':
+          box(0,.23,0,1,.34,1,wood);box(0,.5,0,1,.24,.96,white);box(0,.85,-.45,1.06,.3,.12,wood);box(0,.66,.15,1.01,.07,.66);
+          box(-.23,.69,-.3,.4,.12,.2,white);box(.23,.69,-.3,.4,.12,.2,white);break;
+        case 'table':legs(.9);box(0,.94,0,1,.12,1);break;
+        case 'chair':legs(.48);box(0,.5,0,1,.1,1);box(0,.78,-.4,.95,.45,.12);break;
+        case 'cabinet':box(0,.5,0,1,1,1);box(0,.5,.51,.02,.95,.025,dark);for(const x of [-.08,.08])box(x,.5,.53,.02,.14,.025,dark);break;
+        case 'fridge':box(0,.5,0,1,1,1);box(0,.7,.51,.99,.018,.02,dark);box(.37,.4,.53,.025,.21,.03,dark);box(.37,.83,.53,.025,.16,.03,dark);break;
+        case 'stove':
+          box(0,.46,0,1,.92,1);box(0,.98,0,1,.05,1,dark);box(0,.44,.505,.75,.48,.02,dark);
+          for(const x of [-.26,.26])for(const z of [-.25,.25])cylinder(x,1.01,z,.14,.025,wood);
+          for(const x of [-.3,-.1,.1,.3])cylinder(x,.83,.53,.04,.03,dark).rotation.x=Math.PI/2;break;
+        case 'sink':box(0,.45,0,.96,.9,.95);box(0,.95,0,1,.1,1,white);box(0,1.006,0,.5,.025,.55,dark);cylinder(.28,1.07,-.25,.025,.2,dark);break;
+        case 'toilet':cylinder(0,.25,.08,.33,.45,white);box(0,.65,-.3,.9,.7,.36,white);cylinder(0,.5,.13,.42,.12,mat);break;
+        case 'plant':{
+          cylinder(0,.17,0,.28,.34,wood);cylinder(0,.45,0,.025,.7,dark);
+          for(let i=0;i<9;i++){const angle=i*2.4,mesh=new THREE.Mesh(new THREE.SphereGeometry(.2,10,8),mat);mesh.position.set(Math.sin(angle)*.21,.5+i*.055,Math.cos(angle)*.21);mesh.scale.set(.8,1.35,.65);mesh.rotation.z=Math.sin(angle)*.6;mesh.castShadow=true;group.add(mesh);}break;
+        }
+        case 'lamp':cylinder(0,.03,0,.32,.06,dark);cylinder(0,.5,0,.025,.9,dark);cylinder(0,.9,0,.45,.22);break;
+      }
+    }
+  }
+  // Child picking always resolves to the stable document entity.
+  group.traverse(obj=>{obj.userData.entityId=e.id;});
+  // Materials not used by a model are disposed immediately.
+  const used=new Set<THREE.Material>();group.traverse(o=>{if(o instanceof THREE.Mesh)for(const m of Array.isArray(o.material)?o.material:[o.material])used.add(m);});
+  for(const m of [mat,dark,white,wood])if(!used.has(m))m.dispose();
+  return group;
+}
+export function disposeObject(object:THREE.Object3D){
+  const mats=new Set<THREE.Material>();
+  object.traverse(o=>{
+    if(o instanceof THREE.Mesh||o instanceof THREE.Line||o instanceof THREE.Sprite){
+      if('geometry' in o)o.geometry.dispose();
+      for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);
+    }
+  });
+  for(const m of mats){if('map' in m && m.map instanceof THREE.Texture)m.map.dispose();m.dispose();}
+}

@@ -2,6 +2,8 @@
 
 A web-based 3D building editor. Draw rooms and walls, furnish individual apartments, create multiple floors, and walk through your own building.
 
+[Open the web app](https://habitat-studio.plcm90902.chatgpt.site)
+
 ![Habitat Studio editor](docs/habitat-studio.jpg)
 
 ## First version
