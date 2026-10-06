@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object'] as const;
+export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object', 'slab', 'pergola', 'railing', 'microwave', 'washingMachine', 'dryer', 'dishwasher', 'oven', 'cooktop', 'hood', 'airConditioner', 'baseCabinet', 'wallCabinet', 'drawerUnit', 'bookshelf', 'wardrobe', 'closetPanel', 'countertop'] as const;
 export type Kind = typeof KINDS[number];
 export type View = '3d' | 'plan' | 'walk';
 export type Tool = 'select' | 'move' | 'wall' | 'room' | 'roof' | 'place' | 'area' | 'line';
@@ -14,6 +14,8 @@ export const EntitySchema = z.object({
   id: z.string().min(1).max(100), kind: z.enum(KINDS), name: z.string().max(120), floorId: z.string().min(1).max(100),
   x: z.number().finite().min(-200).max(200), z: z.number().finite().min(-200).max(200),
   rotation: z.number().finite().min(-36000).max(36000),
+  y: z.number().finite().min(0).max(30).optional(),
+  finish: z.enum(['auto','wood','stone','fabric','metal','paint']).optional(),
   w: z.number().finite().min(0.05).max(100), h: z.number().finite().min(0.05).max(30), d: z.number().finite().min(0.05).max(100),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/), apartment: z.string().max(80), hostId: z.string().max(100).optional(),
   product: ProductSourceSchema.optional(),
@@ -45,7 +47,7 @@ export const ProjectSchema = z.object({
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
-export interface CatalogItem { kind: Kind; name: string; section: 'structure' | 'furniture' | 'appliances' | 'outdoor'; w: number; h: number; d: number; color: string; hint: string }
+export interface CatalogItem { kind: Kind; name: string; section: 'structure' | 'furniture' | 'appliances' | 'outdoor' | 'woodwork'; w: number; h: number; d: number; color: string; hint: string; y?:number }
 export const CATALOG: CatalogItem[] = [
   {kind:'wall',name:'Parede',section:'structure',w:4,h:2.8,d:.18,color:'#f1eee6',hint:'Desenhe entre dois pontos'},
   {kind:'room',name:'Cômodo',section:'structure',w:4,h:.16,d:4,color:'#bb936e',hint:'Piso e quatro paredes'},
@@ -58,7 +60,7 @@ export const CATALOG: CatalogItem[] = [
   {kind:'bed',name:'Cama',section:'furniture',w:1.8,h:.7,d:2.2,color:'#eee9de',hint:'Casal'},
   {kind:'table',name:'Mesa',section:'furniture',w:1.8,h:.78,d:.9,color:'#ad8059',hint:'Mesa de jantar'},
   {kind:'chair',name:'Cadeira',section:'furniture',w:.48,h:.95,d:.5,color:'#6a7b70',hint:'Madeira e tecido'},
-  {kind:'cabinet',name:'Armário',section:'furniture',w:1.8,h:2.1,d:.6,color:'#b39473',hint:'Duas portas'},
+  {kind:'cabinet',name:'Armário',section:'woodwork',w:1.8,h:2.1,d:.6,color:'#b39473',hint:'Duas portas'},
   {kind:'plant',name:'Planta',section:'furniture',w:.65,h:1.2,d:.65,color:'#59855d',hint:'Vaso decorativo'},
   {kind:'lamp',name:'Luminária',section:'furniture',w:.45,h:1.7,d:.45,color:'#debd7d',hint:'Luminária de piso'},
   {kind:'fridge',name:'Geladeira',section:'appliances',w:.75,h:1.85,d:.75,color:'#ccd4d5',hint:'Duas portas'},
@@ -73,8 +75,26 @@ export const CATALOG: CatalogItem[] = [
   {kind:'gate',name:'Portão',section:'outdoor',w:3,h:1.5,d:.15,color:'#526b62',hint:'Portão aberto para circulação'},
   {kind:'pool',name:'Piscina',section:'outdoor',w:5,h:1.2,d:3,color:'#4da9bf',hint:'Desenhe a área da piscina'},
   {kind:'tree',name:'Árvore',section:'outdoor',w:2.6,h:3.5,d:2.6,color:'#557b45',hint:'Árvore para o jardim'},
+  {kind:'slab',name:'Laje plana',section:'structure',w:5,h:.18,d:5,color:'#b7b8b1',hint:'Desenhe a cobertura plana a 3 m',y:3},
+  {kind:'pergola',name:'Pergolado',section:'structure',w:4,h:2.7,d:3,color:'#9c7956',hint:'Desenhe a área do pergolado'},
+  {kind:'railing',name:'Guarda-corpo',section:'structure',w:4,h:1.1,d:.08,color:'#7d9599',hint:'Clique no início e no fim'},
+  {kind:'microwave',name:'Micro-ondas',section:'appliances',w:.54,h:.32,d:.42,color:'#c6cdd0',hint:'Sobre a bancada',y:.9},
+  {kind:'washingMachine',name:'Lavadora',section:'appliances',w:.6,h:.85,d:.62,color:'#edf0ec',hint:'Abertura frontal'},
+  {kind:'dryer',name:'Secadora',section:'appliances',w:.6,h:.85,d:.62,color:'#dce3e4',hint:'Abertura frontal'},
+  {kind:'dishwasher',name:'Lava-louças',section:'appliances',w:.6,h:.85,d:.6,color:'#bdc5c8',hint:'Modelo de piso'},
+  {kind:'oven',name:'Forno embutido',section:'appliances',w:.6,h:.6,d:.56,color:'#414949',hint:'Ajuste a elevação no painel',y:.65},
+  {kind:'cooktop',name:'Cooktop',section:'appliances',w:.6,h:.06,d:.52,color:'#263434',hint:'Sobre a bancada',y:.91},
+  {kind:'hood',name:'Coifa',section:'appliances',w:.9,h:.6,d:.5,color:'#bdc6c9',hint:'Acima do fogão',y:1.6},
+  {kind:'airConditioner',name:'Ar-condicionado',section:'appliances',w:.9,h:.3,d:.22,color:'#f0f2ed',hint:'Ajuste a posição na parede',y:2.1},
+  {kind:'baseCabinet',name:'Balcão inferior',section:'woodwork',w:1.2,h:.88,d:.6,color:'#ba9774',hint:'Módulo com duas portas'},
+  {kind:'wallCabinet',name:'Armário aéreo',section:'woodwork',w:1.2,h:.7,d:.35,color:'#ddc5a4',hint:'Instalado acima da bancada',y:1.5},
+  {kind:'drawerUnit',name:'Gaveteiro',section:'woodwork',w:.6,h:.85,d:.55,color:'#a98868',hint:'Quatro gavetas'},
+  {kind:'bookshelf',name:'Estante',section:'woodwork',w:1.2,h:1.9,d:.35,color:'#a98b67',hint:'Prateleiras abertas'},
+  {kind:'wardrobe',name:'Guarda-roupa',section:'woodwork',w:2.4,h:2.3,d:.65,color:'#b89c7f',hint:'Três portas de correr'},
+  {kind:'closetPanel',name:'Painel ripado',section:'woodwork',w:2,h:2.5,d:.08,color:'#aa825a',hint:'Painel de marcenaria'},
+  {kind:'countertop',name:'Bancada',section:'woodwork',w:2,h:.05,d:.65,color:'#d4d2c8',hint:'Tampo sobre os módulos',y:.9},
 ];
-export const AREA_KINDS:Kind[]=['terrain','lawn','paving','pool'];
+export const AREA_KINDS:Kind[]=['terrain','lawn','paving','pool','slab','pergola'];
 export const GRID = .25;
 export const PLAYER_RADIUS = .22;
 export const uid = () => {
@@ -88,7 +108,7 @@ export const snap = (v:number, enabled = true) => enabled ? Math.round(v/GRID)*G
 export const catalogFor = (kind:Kind) => CATALOG.find(i => i.kind === kind)!;
 export function entity(kind:Kind, floorId:string, x=0, z=0, extra:Partial<Entity>={}):Entity {
   const item = catalogFor(kind);
-  return {id:uid(),kind,name:item.name,floorId,x,z,rotation:0,w:item.w,h:item.h,d:item.d,color:item.color,apartment:'',...extra};
+  return {id:uid(),kind,name:item.name,floorId,x,z,rotation:0,w:item.w,h:item.h,d:item.d,color:item.color,apartment:'',...(item.y?{y:item.y}:{}),...extra};
 }
 export function localPoint(e:Entity,x:number,z:number) {
   const a=e.rotation*Math.PI/180, dx=x-e.x, dz=z-e.z;
@@ -142,13 +162,15 @@ export function wallSections(wall:Entity,all:Entity[],displayHeight=wall.h):Wall
 export function collides(project:Project,x:number,z:number,feet:number):boolean {
   return project.entities.some(e=>{
     const floor=project.floors.find(f=>f.id===e.floorId)!;
-    if(feet+1.65<floor.elevation || feet>floor.elevation+e.h-.1)return false;
+    const base=floor.elevation+(e.y??0);
+    if(feet+1.65<base || feet>base+e.h-.1)return false;
     if(e.kind==='wall'){
       const p=localPoint(e,x,z);
       if(Math.abs(p.z)>e.d/2+PLAYER_RADIUS||Math.abs(p.x)>e.w/2+PLAYER_RADIUS)return false;
       return !project.entities.some(o=>o.kind==='door'&&o.hostId===e.id&&Math.abs(p.x-localPoint(e,o.x,o.z).x)<o.w/2-PLAYER_RADIUS&&feet+1.65<floor.elevation+o.h);
     }
-    if(['room','door','window','roof','stairs','plant','lamp','terrain','lawn','paving'].includes(e.kind))return false;
+    if(['room','door','window','roof','slab','stairs','plant','lamp','terrain','lawn','paving'].includes(e.kind))return false;
+    if(e.kind==='pergola'){const p=localPoint(e,x,z);return Math.abs(p.x)>e.w/2-.13-PLAYER_RADIUS&&Math.abs(p.x)<e.w/2+PLAYER_RADIUS&&Math.abs(p.z)>e.d/2-.13-PLAYER_RADIUS&&Math.abs(p.z)<e.d/2+PLAYER_RADIUS;}
     if(e.kind==='gate') { const p=localPoint(e,x,z); return Math.abs(p.z)<e.d/2+PLAYER_RADIUS && Math.abs(p.x)>e.w/2-.12-PLAYER_RADIUS && Math.abs(p.x)<e.w/2+PLAYER_RADIUS; }
     if(e.kind==='tree')return Math.hypot(x-e.x,z-e.z)<Math.min(e.w,e.d)*.08+PLAYER_RADIUS;
     return inside(e,x,z,PLAYER_RADIUS*.7);

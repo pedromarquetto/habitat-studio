@@ -35,6 +35,17 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 
 ![Product measurement review](docs/product-import.jpg)
 
+## v0.3 — Penthouse, expanded catalog and Real mode
+
+- **Adicionar cobertura** adds an editable top floor with either a furnished apartment and terrace or an open terrace. It replaces only the previous top floor's gabled roof, preserves the lower floors, and connects the terrace with a stair shaft and continuous landing. Perimeter railings, a pergola and outdoor furniture are included. Automatic layouts accept footprints from 8 × 9 m to 60 × 60 m; other shapes can be built manually.
+- Structure catalog adds a flat roof slab, pergola and railing. Outdoor furniture and plants can be placed on the active upper floor.
+- Eight new appliances: microwave, washing machine, dryer, dishwasher, built-in oven, cooktop, range hood and air conditioner. **Marcenaria** contains eight items: cabinet, base cabinet, wall cabinet, drawer unit, bookshelf, wardrobe, slatted panel and countertop.
+- **Elevação** positions objects above their assigned floor, including wall cabinets, hoods and air conditioners. Color and finish can be edited separately; finish choices are automatic, wood, stone, fabric, metal and paint. All dimensions, elevations and finish choices survive JSON export/import.
+- **Real** enters first-person exploration of the same document with PBR surface maps, bump detail, reflections, shadows, day/night lighting and room lights. **Editar** returns to the editor without changing the project. Walking retains click-and-drag look, adjustable sensitivity, collision, stair access and floor shortcuts.
+- This is an initial real-time visualization using procedural geometry, not a photographic reconstruction. Enhanced surface maps, reflections and shadows require WebGL; the compatibility renderer shows a simplified view and a clear notice. No external asset services or API keys are required.
+
+![Penthouse and woodwork catalog](docs/penthouse-real.jpg)
+
 ## Moving objects
 
 Hold an object briefly before dragging in 3D or floor-plan view. The **Mover** tool is also available directly in the viewport toolbar. The camera stays fixed during object movement; empty-space drags in selection mode navigate.
@@ -75,8 +86,8 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 3. Select **Porta** or **Janela** and click a wall on the active floor.
 4. Choose a furniture/appliance item and click the floor. Press **R** to rotate before placement.
 5. Select an object to change its meter coordinates, dimensions, color, name, or apartment. Hold the primary mouse button over it for 450 ms, then drag to move. Moving immediately keeps camera navigation. Alternatively choose **Mover** (**M**) to drag without waiting; **V** returns to selection. Release to commit, or press **Esc** to cancel. A move creates one undo entry. Doors/windows slide along their host wall.
-6. Use the floors panel to add, duplicate, or select a floor. **Gerar prédio** creates one to eight furnished floors.
-7. Switch to **Caminhar** to enter the active floor or selected room. Use **WASD** to walk and **Shift** to move faster. Hold the left mouse button and drag to look; release it to stop turning. Arrow keys also look around. Adjust **Sensibilidade** in the lower-right corner (25–200%). Stairs connect floors; the floor buttons provide direct access.
+6. Use the floors panel to add, duplicate, or select a floor. **Gerar prédio** creates one to eight furnished floors; **Adicionar cobertura** adds an apartment with terrace or an open terrace above the current top floor.
+7. Switch to **Caminhar** to enter the active floor or selected room, or **Real** for enhanced materials and **Dia/Noite** lighting. Use **WASD** to walk and **Shift** to move faster. Hold the left mouse button and drag to look; release it to stop turning. Arrow keys also look around. Adjust **Sensibilidade** in the lower-right corner (25–200%). Stairs connect floors; the floor buttons provide direct access. **Editar** returns from Real mode.
 8. Use **Exportar** to back up the project or move it to another browser.
 
 | Shortcut | Action |
@@ -97,6 +108,8 @@ The included Vinext configuration uses React, TypeScript, Three.js, and Vite wit
 
 - `lib/habitat/domain.ts`: versioned document schema, generators, hosted openings, collision, movement and floor support. Independent of rendering and React.
 - `lib/habitat/models.ts`: procedural 3D geometry and material/resource lifecycle.
+- `lib/habitat/penthouse.ts`: nonmutating top-floor generation, terrace slabs and stair openings.
+- `lib/habitat/real-materials.ts`: shared numeric PBR surface maps and geometry-preserving finish application.
 - `lib/habitat/engine.ts`: cameras, orbit and walking controls, picking, previews and renderers.
 - `lib/habitat/object-move.ts`: gesture arbitration, grid snapping and hosted-opening constraints.
 - `lib/habitat/object-rotate.ts`: continuous dial angles, wraparound and optional rotation snapping.

@@ -106,3 +106,24 @@ Verified in the supervised SVG preview:
 Cancellation paths were reviewed in the event lifecycle; continuously held pointer cancellation, physical touch and hardware WebGL were not exercised by this browser check.
 
 ![Selected sofa rotated 45 degrees](object-rotation.jpg)
+
+# v0.3 verification
+
+## Automated
+
+34 tests pass. The five new cases exercise apartment/open-terrace generation without mutating the source or lower floors; valid JSON round-trips and top-roof replacement; continuous stair ascent/descent plus bidirectional apartment/terrace doorway passage; unsupported footprints and floor limits; all 16 new-appliance/woodwork categories with exact imported bounds, suspended-object collision and product-name classification; and geometry-preserving Real materials, explicit finish overrides and shared texture disposal. TypeScript passes. The publishing workflow verifies the production build and package.
+
+## Browser
+
+Verified on the supervised preview with the SVG compatibility renderer:
+
+- Adding an apartment with terrace creates a third floor at 6.40 m, with 37 new-floor entities and 157 total entities in the starter building. One undo restores the original two-floor project; adding again recreates the coverage.
+- Marcenaria has eight usable options; Equipar has twelve, including the eight added appliances.
+- Placing an aerial cabinet on the terrace starts at 1.50 m above the active floor. The inspector accepts 1.80 m and Metal finish.
+- Real enters first-person exploration, keeps the current floor and exposes Dia/Noite, Editar, direct floor access and sensitivity controls. Changing day/night visibly changes the sky and lighting; holding a movement button changes player coordinates. Pointer dragging changes the camera view.
+- Returning to edit and reloading retains the three-floor document, the placed cabinet and its elevation/finish.
+
+WebGL is unavailable in the test browser. Its notice is visible in Real mode; GPU textures, bump detail, reflections and shadows were reviewed in code but were not visually verified here. This is a first real-time presentation of procedural models, not a claim of photographic reconstruction. Physical mobile/touch checks remain pending.
+
+![Penthouse and woodwork](penthouse-real.jpg)
+![Real mode in the compatibility renderer](real-mode.jpg)

@@ -6,8 +6,10 @@ import { catalogFor, findSpawn, movePlayer, updateEntity, type Entity, type Kind
 import { WalkLook } from './walk-controls';
 import { MoveGesture, MOVE_HOLD_MS, entityMovePosition } from './object-move';
 import { RotationDial, normalizeRotation } from './object-rotate';
+import { RealMaterials } from './real-materials';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-export interface EngineState {project:Project;floorId:string;view:View;isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null}
+export interface EngineState {project:Project;floorId:string;view:View;realMode:boolean;lighting:'day'|'night';isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null}
 export interface Pick {point:{x:number;z:number};entityId:string|null}
 export interface DragStatus {entityId:string;phase:'holding'|'moving'|'rotating';rotation?:number}
 export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:{x:number;z:number})=>boolean;onRotate:(id:string,rotation:number)=>boolean}
@@ -31,6 +33,10 @@ export class HabitatEngine {
   private moving:{entity:Entity;anchor:{x:number;z:number};point:{x:number;z:number};hasMoved:boolean}|null=null;
   private suppressedPick:number|null=null;
   private rotationRing=document.createElement('div');private rotationHandle=document.createElement('button');
+  private realMaterials=new RealMaterials();private environment:THREE.WebGLRenderTarget|null=null;
+  private hemisphere=new THREE.HemisphereLight('#ffffff','#c4c5b5',2.5);
+  private lightFloorId:string|null=null;
+  private sun=new THREE.DirectionalLight('#fff8e9',3.2);private roomLights=new THREE.Group();
   private rotating:{entity:Entity;pointerId:number;dial:RotationDial;rotation:number}|null=null;
   private listeners:{target:EventTarget;name:string;fn:EventListener;capture:boolean}[]=[];
 
@@ -48,9 +54,9 @@ export class HabitatEngine {
     this.rotationHandle.title='Arraste para girar · Setas: 15° · Shift + setas: 1°';
     this.rotationHandle.setAttribute('aria-label','Alça de rotação do objeto');
     this.rotationRing.appendChild(this.rotationHandle);host.appendChild(this.rotationRing);this.scene.background=new THREE.Color('#e8ede9');this.scene.fog=new THREE.Fog('#e8ede9',60,160);
-    this.scene.add(new THREE.HemisphereLight('#ffffff','#c4c5b5',2.5));
+    this.scene.add(this.hemisphere,this.roomLights,this.sun.target);
     if(this.software)this.scene.add(new THREE.AmbientLight('#ffffff',.55));
-    const sun=new THREE.DirectionalLight('#fff8e9',this.software?.8:3.2);sun.position.set(-14,25,12);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;sun.shadow.normalBias=.03;this.scene.add(sun);
+    const sun=this.sun;sun.intensity=this.software?.8:3.2;sun.position.set(-14,25,12);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-30;sun.shadow.camera.right=30;sun.shadow.camera.top=30;sun.shadow.camera.bottom=-30;sun.shadow.normalBias=.03;this.scene.add(sun);
     const ground=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshStandardMaterial({color:'#e0e7e0',roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.18;ground.receiveShadow=true;ground.visible=!this.software;this.scene.add(ground);
     this.grid=new THREE.GridHelper(80,80,'#aabeb0','#c6d2c9');this.grid.position.y=-.16;this.scene.add(this.grid);
     const axesPoints=[new THREE.Vector3(-40,-.15,0),new THREE.Vector3(40,-.15,0),new THREE.Vector3(0,-.15,-40),new THREE.Vector3(0,-.15,40)];
@@ -127,11 +133,11 @@ export class HabitatEngine {
     const docChanged=previous?.project!==next.project;
     if(this.rotating&&(docChanged||previous?.selectedId!==next.selectedId||previous?.floorId!==next.floorId||previous?.view!==next.view||previous?.tool!==next.tool||previous?.snapping!==next.snapping||previous?.cutaway!==next.cutaway||previous?.isolate!==next.isolate))this.finishRotation(false);
     if(this.moving && (docChanged || previous?.floorId!==next.floorId || previous?.view!==next.view || previous?.tool!==next.tool || previous?.snapping!==next.snapping || previous?.cutaway!==next.cutaway || previous?.isolate!==next.isolate))this.finishMove(false);
-    const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view;
+    const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view||previous?.realMode!==next.realMode||previous?.lighting!==next.lighting;
     this.state=next;
     const elevation=next.project.floors.find(f=>f.id===next.floorId)?.elevation??0;this.plane.constant=-elevation;
     this.grid.visible=next.grid&&next.view!=='walk';this.grid.position.y=elevation+.012;
-    if(renderChanged)this.rebuild();
+    if(renderChanged){this.rebuild();this.configureLighting();}
     this.restoreControls();
     this.renderer.domElement.style.cursor=this.moveGesture.phase==='moving'?'grabbing':this.moveGesture.phase==='holding'?'progress':next.view==='walk'?(this.look.pointerId!==null?'grabbing':'grab'):next.tool==='select'?'grab':next.tool==='move'?'move':'crosshair';
     if(previous?.view!==next.view){
@@ -154,14 +160,44 @@ export class HabitatEngine {
     const s=this.state;
     for(const e of s.project.entities){
       const floor=s.project.floors.find(f=>f.id===e.floorId)!;
-      if(s.view!=='walk'&&s.isolate&&floor.id!==s.floorId)continue;
-      if(e.kind==='roof'&&(s.view==='plan'||(s.cutaway&&s.view!=='walk')))continue;
+      const activeElevation=s.project.floors.find(f=>f.id===s.floorId)!.elevation;
+      const incoming=e.kind==='stairs'&&floor.elevation<activeElevation&&Math.abs(floor.elevation+e.h-activeElevation)<.05;
+      if(s.view!=='walk'&&s.isolate&&floor.id!==s.floorId&&!incoming)continue;
+      if(['roof','slab'].includes(e.kind)&&(s.view==='plan'||(s.cutaway&&s.view!=='walk')))continue;
       const model=makeModel(e,s.project.entities,s.view!=='walk'&&s.cutaway&&(s.isolate||e.floorId===s.floorId));
+      if(s.realMode)this.realMaterials.apply(model,e);
       if(this.software){const layer=({terrain:-40,lawn:-30,paving:-20} as Partial<Record<Kind,number>>)[e.kind];if(layer!==undefined)model.traverse(o=>{o.renderOrder=layer;});}
-      model.position.set(e.x,floor.elevation,e.z);model.rotation.y=e.rotation*Math.PI/180;this.root.add(model);this.objects.set(e.id,model);
+      model.position.set(e.x,floor.elevation+(e.y??0),e.z);model.rotation.y=e.rotation*Math.PI/180;this.root.add(model);this.objects.set(e.id,model);
       if(e.kind==='room'&&s.view!=='walk')this.label(e,model);
     }
     this.root.updateMatrixWorld(true);
+  }
+  private configureLighting(lightFloorId=this.state?.floorId){
+    const s=this.state;if(!s||!lightFloorId)return;this.lightFloorId=lightFloorId;
+    const real=s.realMode,night=real&&s.lighting==='night';
+    this.scene.background=new THREE.Color(real?(night?'#111d32':'#bcd9ec'):'#e8ede9');
+    this.scene.fog=new THREE.Fog(real?(night?'#111d32':'#bcd9ec'):'#e8ede9',real?70:60,real?220:160);
+    this.hemisphere.intensity=real?(night?.22:1.15):2.5;this.hemisphere.color.set(real?'#cce2ff':'#ffffff');
+    this.sun.intensity=real?(night?.16:(this.software?1:3.4)):(this.software?.8:3.2);this.sun.color.set(night?'#8ba9dd':'#fff1d9');
+    if(this.renderer instanceof THREE.WebGLRenderer){
+      this.renderer.toneMappingExposure=real?(night?1.2:1):1.4;
+      if(real&&!this.environment){const source=new RoomEnvironment(),pmrem=new THREE.PMREMGenerator(this.renderer);this.environment=pmrem.fromScene(source,.04);source.dispose();pmrem.dispose();}
+      this.scene.environment=real?this.environment?.texture??null:null;this.scene.environmentIntensity=night?.18:.75;
+    }
+    const bounds=new THREE.Box3().setFromObject(this.root),center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),span=Math.max(size.x,size.y,size.z,20);
+    this.sun.target.position.copy(center);this.sun.position.copy(center).add(new THREE.Vector3(-span,span*1.6,span*.8));
+    const shadow=this.sun.shadow.camera;shadow.left=shadow.bottom=-span;shadow.right=shadow.top=span;shadow.far=span*6;shadow.updateProjectionMatrix();
+    disposeObject(this.roomLights);this.roomLights.clear();
+    if(!real)return;
+    const elevation=s.project.floors.find(f=>f.id===lightFloorId)!.elevation;
+    const rooms=s.project.entities.filter(e=>e.floorId===lightFloorId&&e.kind==='room'&&e.w>=2&&e.d>=2).slice(0,8);
+    for(const room of rooms){
+      const light=new THREE.PointLight('#ffd6a3',night?32:12,Math.max(8,Math.min(14,Math.max(room.w,room.d)*1.5)),2);
+      light.position.set(room.x,elevation+2.55,room.z);this.roomLights.add(light);
+      if(!/terraço/i.test(room.name)){
+        const fixture=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.035,16),new THREE.MeshStandardMaterial({color:'#fff4d5',emissive:'#ffd6a3',emissiveIntensity:night?3:.5}));fixture.position.set(room.x,elevation+2.77,room.z);this.roomLights.add(fixture);
+      }
+    }
   }
   private label(e:Entity,model:THREE.Group){
     if(e.w<2||e.d<2)return;
@@ -208,7 +244,7 @@ export class HabitatEngine {
     const item=this.selectedRotatable();
     if(!item||this.moveGesture.pointerId!==null){this.rotationRing.hidden=true;return;}
     const elevation=this.state!.project.floors.find(f=>f.id===item.floorId)!.elevation;
-    const point=new THREE.Vector3(item.x,elevation+Math.min(item.h/2,1),item.z).project(this.activeCamera);
+    const point=new THREE.Vector3(item.x,elevation+(item.y??0)+Math.min(item.h/2,1),item.z).project(this.activeCamera);
     const x=(point.x+1)*this.host.clientWidth/2,y=(1-point.y)*this.host.clientHeight/2;
     this.rotationRing.hidden=point.z<-1||point.z>1||x<0||y<0||x>this.host.clientWidth||y>this.host.clientHeight;
     this.rotationRing.style.left=`${x}px`;this.rotationRing.style.top=`${y}px`;
@@ -239,7 +275,7 @@ export class HabitatEngine {
     for(const item of preview.entities){
       if(item.id!==drag.entity.id&&item.hostId!==drag.entity.id)continue;
       const object=this.objects.get(item.id);if(!object)continue;
-      object.position.set(item.x,s.project.floors.find(f=>f.id===item.floorId)!.elevation,item.z);object.rotation.y=item.rotation*Math.PI/180;
+      object.position.set(item.x,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.y??0),item.z);object.rotation.y=item.rotation*Math.PI/180;
     }
     this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;
     this.callbacks.onDragState({entityId:drag.entity.id,phase:'rotating',rotation});
@@ -287,14 +323,14 @@ export class HabitatEngine {
     const dx=point.x-drag.entity.x,dz=point.z-drag.entity.z;
     for(const item of s.project.entities){
       if(item.id!==drag.entity.id && item.hostId!==drag.entity.id)continue;
-      const object=this.objects.get(item.id);if(object)object.position.set(item.x+dx,s.project.floors.find(f=>f.id===item.floorId)!.elevation,item.z+dz);
+      const object=this.objects.get(item.id);if(object)object.position.set(item.x+dx,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.y??0),item.z+dz);
     }
     // A sliding door/window changes just its host wall's hole, not the whole scene.
     if(drag.entity.hostId){
       const host=s.project.entities.find(e=>e.id===drag.entity.hostId)!;
       const old=this.objects.get(host.id);if(old){this.root.remove(old);disposeObject(old);}
       const model=makeModel(host,updateEntity(s.project,drag.entity.id,point).entities,s.cutaway);
-      model.position.set(host.x,s.project.floors.find(f=>f.id===host.floorId)!.elevation,host.z);model.rotation.y=host.rotation*Math.PI/180;
+      model.position.set(host.x,s.project.floors.find(f=>f.id===host.floorId)!.elevation+(host.y??0),host.z);model.rotation.y=host.rotation*Math.PI/180;
       this.root.add(model);this.objects.set(host.id,model);
     }
     this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;this.callbacks.onHover(point);
@@ -335,7 +371,7 @@ export class HabitatEngine {
     const s=this.state,quantize=(n:number)=>s.snapping?Math.round(n*4)/4:n;
     const x=quantize(point.x),z=quantize(point.z),floor=s.project.floors.find(f=>f.id===s.floorId)!;
     if(s.tool==='place'&&!['door','window'].includes(s.placing)){
-      const item={...catalogFor(s.placing),...s.placement};const mesh=new THREE.Mesh(new THREE.BoxGeometry(item.w,item.h,item.d),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.35,transparent:true}));mesh.position.set(x,floor.elevation+item.h/2,z);mesh.rotation.y=s.rotation*Math.PI/180;this.ghost.add(mesh);
+      const item={...catalogFor(s.placing),...s.placement};const mesh=new THREE.Mesh(new THREE.BoxGeometry(item.w,item.h,item.d),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.35,transparent:true}));mesh.position.set(x,floor.elevation+(item.y??0)+item.h/2,z);mesh.rotation.y=s.rotation*Math.PI/180;this.ghost.add(mesh);
     }else if(s.drawStart){
       const a=s.drawStart;
       if(s.tool==='wall'||s.tool==='line'){
@@ -364,6 +400,7 @@ export class HabitatEngine {
       const norm=Math.max(1,Math.hypot(forward,right));forward/=norm;right/=norm;
       const speed=(this.keys.has('ShiftLeft')||this.keys.has('ShiftRight')?4.5:2.5)*dt;
       this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed);
+      if(this.state.realMode){const floor=this.state.project.floors.filter(f=>f.elevation<=this.player.feet+.1).sort((a,b)=>b.elevation-a.elevation)[0];if(floor&&floor.id!==this.lightFloorId)this.configureLighting(floor.id);}
       this.camera.position.set(this.player.x,this.player.feet+1.65,this.player.z);this.camera.rotation.set(this.pitch,this.yaw,0,'YXZ');
       if(time-this.lastPositionUpdate>200){this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;}
     }else if(this.moveGesture.phase!=='moving'&&!this.rotating){const orbitChanged=this.controls.update(),planChanged=this.planControls.update();if(orbitChanged||planChanged)this.dirty=true;}
@@ -392,5 +429,5 @@ export class HabitatEngine {
   }
   zoom(direction:number){this.finishRotation(false);this.finishMove(false);this.dirty=true;if(this.state?.view==='plan'){this.planCamera.zoom=Math.max(.3,Math.min(12,this.planCamera.zoom*(direction>0?1.25:.8)));this.planCamera.updateProjectionMatrix();}else if(this.state?.view!=='walk'){const vec=this.camera.position.clone().sub(this.controls.target);vec.multiplyScalar(direction>0?.8:1.25);this.camera.position.copy(this.controls.target).add(vec);this.controls.update();}}
   focus(id:string){this.finishRotation(false);this.finishMove(false);this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
-  dispose(){this.stopped=true;this.finishRotation(false);this.finishMove(false);this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn,capture} of this.listeners)target.removeEventListener(name,fn,capture);this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();this.rotationRing.remove();}
+  dispose(){this.stopped=true;this.finishRotation(false);this.finishMove(false);this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn,capture} of this.listeners)target.removeEventListener(name,fn,capture);this.controls.dispose();this.planControls.dispose();disposeObject(this.scene);this.realMaterials.dispose();this.environment?.dispose();if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();this.rotationRing.remove();}
 }

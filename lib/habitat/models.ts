@@ -6,6 +6,7 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
   const group=new THREE.Group();group.userData.entityId=e.id;
   const mat=material(e.color);
   const dark=material('#46524e'),white=material('#f2efe7'),wood=material('#956e4e');
+  wood.userData.surface='wood';dark.userData.surface='paint';white.userData.surface=['bed','sofa','armchair'].includes(e.kind)?'fabric':'paint';
   const box=(x:number,y:number,z:number,w:number,h:number,d:number,m:THREE.Material=mat)=>{
     const surface=['room','terrain','lawn','paving'].includes(e.kind);
     const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,surface?Math.max(1,Math.ceil(w/2)):1,1,surface?Math.max(1,Math.ceil(d/2)):1),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
@@ -83,6 +84,20 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
       const mesh=new THREE.Mesh(geometry,mat);mesh.position.set(0,2.95,-e.d/2);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);
       break;
     }
+    case 'slab':box(0,e.h/2,0,e.w,e.h,e.d);break;
+    case 'pergola':{
+      for(const x of [-1,1])for(const z of [-1,1])box(x*(e.w/2-.07),e.h/2,z*(e.d/2-.07),.14,e.h,.14);
+      for(const z of [-1,1])box(0,e.h-.12,z*(e.d/2-.08),e.w,.18,.16);
+      const beams=Math.max(4,Math.ceil(e.w/.3));for(let i=0;i<beams;i++)box(-e.w/2+.07+(e.w-.14)*i/(beams-1),e.h-.04,0,.08,.08,e.d);
+      break;
+    }
+    case 'railing':{
+      const panels=Math.max(1,Math.ceil(e.w/1.2)),glass=new THREE.MeshPhysicalMaterial({color:'#bcdce3',roughness:.12,metalness:.05,transparent:true,opacity:.24,depthWrite:false});
+      for(let i=0;i<=panels;i++)box(-e.w/2+i*e.w/panels,e.h/2,0,.035,e.h,e.d,dark);
+      box(0,e.h-.025,0,e.w,.05,e.d,dark);
+      for(let i=0;i<panels;i++)box(-e.w/2+(i+.5)*e.w/panels,e.h*.47,0,e.w/panels-.05,e.h*.85,.018,glass);
+      break;
+    }
     case 'stairs':{
       const steps=Math.max(8,Math.ceil(e.h/.18));
       for(let i=0;i<steps;i++){const h=(i+1)*e.h/steps;box(0,h/2,-e.d/2+(i+.5)*e.d/steps,e.w,h,e.d/steps);}
@@ -112,7 +127,52 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
         case 'table':legs(.9);box(0,.94,0,1,.12,1);break;
         case 'chair':legs(.48);box(0,.5,0,1,.1,1);box(0,.78,-.4,.95,.45,.12);break;
         case 'cabinet':box(0,.5,0,1,1,1);box(0,.5,.51,.02,.95,.025,dark);for(const x of [-.08,.08])box(x,.5,.53,.02,.14,.025,dark);break;
+        case 'baseCabinet':case 'wallCabinet':case 'wardrobe':{
+          box(0,.5,0,1,1,1);const doors=e.kind==='wardrobe'?3:2;
+          for(let i=1;i<doors;i++)box(-.5+i/doors,.5,.505,.008,.96,.012,dark);
+          for(let i=0;i<doors;i++)box(-.5+(i+.65)/doors,.53,.515,.015,.14,.015,dark);
+          if(e.kind==='baseCabinet')box(0,.97,0,1,.06,1,white);break;
+        }
+        case 'drawerUnit':{
+          box(0,.5,0,1,1,1);
+          for(let i=0;i<4;i++){box(0,(i+.5)/4,.505,.94,.232,.016);box(0,(i+.5)/4,.524,.35,.017,.02,dark);}break;
+        }
+        case 'bookshelf':{
+          box(-.47,.5,0,.06,1,1);box(.47,.5,0,.06,1,1);box(0,.5,-.47,.88,1,.06);
+          for(let i=0;i<=5;i++)box(0,.025+i*.19,0,.9,.04,1);
+          const books=[material('#47666a'),material('#b0714f'),material('#cfbc92')];
+          for(let shelf=0;shelf<3;shelf++)for(let i=0;i<5;i++)box(-.3+i*.1,.13+shelf*.19,0,.07,.14,.48,books[i%3]);break;
+        }
+        case 'closetPanel':{
+          box(0,.5,-.25,1,1,.5,dark);for(let i=0;i<18;i++)box(-.47+i*.055,.5,.12,.028,1,.75);break;
+        }
+        case 'countertop':box(0,.5,0,1,1,1);break;
         case 'fridge':box(0,.5,0,1,1,1);box(0,.7,.51,.99,.018,.02,dark);box(.37,.4,.53,.025,.21,.03,dark);box(.37,.83,.53,.025,.16,.03,dark);break;
+        case 'washingMachine':case 'dryer':{
+          box(0,.5,0,1,1,1);box(0,.89,.506,.92,.12,.02,white);
+          const rim=cylinder(0,.44,.515,.32,.04,dark);rim.rotation.x=Math.PI/2;
+          const glass=cylinder(0,.44,.545,.265,.02,material(e.kind==='dryer'?'#607680':'#32494e',.18));glass.rotation.x=Math.PI/2;
+          cylinder(.3,.9,.53,.035,.02,dark).rotation.x=Math.PI/2;box(-.25,.9,.53,.25,.05,.025,dark);break;
+        }
+        case 'microwave':case 'oven':{
+          box(0,.5,0,1,1,1);box(-.06,.5,.505,.76,.73,.025,dark);box(-.06,.5,.525,.59,.51,.015,material('#344d50',.12));
+          box(.28,.5,.54,.025,.48,.03,white);box(.4,.75,.53,.065,.06,.02,dark);box(.4,.52,.53,.07,.2,.02,dark);break;
+        }
+        case 'dishwasher':{
+          box(0,.5,0,1,1,1);box(0,.9,.505,.98,.16,.025,dark);box(0,.78,.54,.7,.025,.04,white);box(-.28,.91,.525,.17,.04,.015,white);break;
+        }
+        case 'cooktop':{
+          box(0,.25,0,1,.5,1,dark);
+          for(const x of [-.26,.26])for(const z of [-.25,.25]){
+            cylinder(x,.6,z,.17,.18,mat);cylinder(x,.75,z,.115,.12,dark);
+          }break;
+        }
+        case 'hood':box(0,.14,0,1,.28,1);box(0,.64,-.2,.32,.72,.45);box(0,.02,0,.8,.035,.75,dark);break;
+        case 'airConditioner':{
+          box(0,.5,0,1,.9,1);box(0,.16,.5,.88,.13,.02,dark);
+          for(let i=0;i<4;i++)box(0,.15+i*.035,.514,.86,.012,.025,white);
+          box(.35,.55,.512,.1,.05,.02,dark);break;
+        }
         case 'stove':
           box(0,.46,0,1,.92,1);box(0,.98,0,1,.05,1,dark);box(0,.44,.505,.75,.48,.02,dark);
           for(const x of [-.26,.26])for(const z of [-.25,.25])cylinder(x,1.01,z,.14,.025,wood);
@@ -148,5 +208,7 @@ export function disposeObject(object:THREE.Object3D){
       for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);
     }
   });
-  for(const m of mats){if('map' in m && m.map instanceof THREE.Texture)m.map.dispose();m.dispose();}
+  const textures=new Set<THREE.Texture>();
+  for(const m of mats){for(const key of ['map','bumpMap','roughnessMap','normalMap','metalnessMap','emissiveMap'] as const){const texture=(m as THREE.MeshStandardMaterial)[key];if(texture instanceof THREE.Texture&&!texture.userData.sharedHabitatTexture)textures.add(texture);}m.dispose();}
+  for(const texture of textures)texture.dispose();
 }

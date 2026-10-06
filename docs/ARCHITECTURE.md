@@ -18,13 +18,25 @@ Ground support is evaluated from floor slabs and stair ramps at the player's fee
 
 Version 1 JSON projects use meters and a Zod schema. Projects are autosaved to `habitat-studio:project:v1` in localStorage after a 500 ms delay. Import validates the full document and limits file size to 5 MB before replacing it. Export contains the canonical document only. Import, generation, and blank projects are reversible through undo.
 
-There is no remote project database in v0.2. A future cloud repository can wrap the same document operations without making the renderer responsible for persistence.
+There is no remote project database. A future cloud repository can wrap the same document operations without making the renderer responsible for persistence.
 
 ## Rendering and resources
 
 The engine loads only on the browser. WebGL renders lit procedural meshes with shadows. The compatibility path uses Three.js SVGRenderer when WebGL cannot be created, shares the same cameras and geometry, and draws on demand at a maximum of 15 fps. Compatibility rendering omits the infinite ground plane and texture-based labels to avoid painter-order artifacts; functional room labels use SVGObject.
 
 Removed model geometries, materials and label textures are disposed. Event listeners, animation frames, controls, resize observers and the renderer are released when the viewport unmounts.
+
+## Penthouse and suspended objects
+
+`addPenthouse` derives the footprint from the highest floor's rooms/walls, validates supported dimensions and floor limits, then appends a distinct floor 3.2 m higher. It replaces only that floor's pitched roofs and keeps all other existing entity identities. Slabs are split around the incoming stair shaft. The stair's upper edge touches the landing exactly; the apartment and terrace slabs also meet at their doorway. Both connections are exercised with continuous player movement tests. Apartment partitions use normal hosted doors/windows. Railings collide, while the central pergola footprint stays traversable and its posts collide.
+
+An entity's optional `y` is the base elevation relative to its floor; omitted means zero. Rendering, placement previews, movement/rotation previews and body collision use it. Existing version-1 JSON remains valid. Upper-floor landscaping stays on the active floor; only the lot tool targets the ground floor.
+
+## Real mode
+
+Real mode is presentation state, separate from the document and undo history. It uses the same meshes, dimensions, collision and walking controller. Five small shared DataTextures provide repeatable wood, stone, fabric, metal and paint surface patterns and bump detail. Explicit entity finishes override catalog defaults; transparent glass retains its glass material. Box UVs follow meter dimensions. Model disposal releases local resources without disposing shared maps; the engine owns and releases the shared texture cache.
+
+Hardware rendering uses a cached PMREM environment from RoomEnvironment, directional shadows, tone-mapping exposure and up to eight room lights on the player's current floor. Day/night changes rebuild presentation without modifying the project. The walking loop changes light floors as the player's feet cross elevations. Renderer teardown disposes the PMREM target and surface textures. SVG mode shows the same geometry with reduced lighting fidelity and a visible WebGL-unavailable notice; it cannot show texture/bump maps, reflections or GPU shadows.
 
 ## Agent interoperability
 
