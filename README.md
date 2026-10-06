@@ -1,12 +1,12 @@
 # Habitat Studio
 
-A web-based 3D building editor. Draw rooms and walls, furnish individual apartments, create multiple floors, and walk through your own building.
-
 [Open the web app](https://habitat-studio.plcm90902.chatgpt.site)
+
+A web-based 3D building editor. Draw rooms and walls, furnish individual apartments, create multiple floors, and walk through your own building.
 
 ![Habitat Studio editor](docs/habitat-studio.jpg)
 
-## First version
+## Features
 
 - Metric 3D editor and orthographic floor plan, with a 0.25 m snapping grid.
 - Wall and room drawing. A room tool creates a floor slab and four walls.
@@ -21,9 +21,23 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 - A compact walking-mode mouse sensitivity slider (25–200%), remembered in the current browser.
 - Automatic lightweight SVG compatibility rendering when WebGL is unavailable. WebGL is the preferred renderer.
 
+## v0.2 — Houses, outdoor areas and product links
+
+- Editable furnished house with a 24 × 30 m lot, lawn, paved access/patio, pool, trees, fence and open gate.
+- Outdoor catalog: draw lots, lawns, paving and pools; draw fences between two points; place gates and trees.
+- **Produto por link** reads public storefront pages through a server endpoint and extracts the product name, reference photo and explicit width/height/depth. It supports Product JSON-LD, labelled specifications, VTEX/Next product data and explicit combined axis orders.
+- Review measurements in centimeters before placement; preview a proportional 3D model and position it at the confirmed metric scale. The source link and original confirmed dimensions survive local saving and JSON export/import.
+- If a page cannot be read, copy its specifications for automatic text extraction or enter measurements yourself. Missing units, ambiguous axis orders and dimension ranges are not guessed.
+- Product geometry is a procedural representation of the chosen category, with exact outer bounds. A product URL does not itself provide a manufacturer 3D model. Exact glTF/GLB import is a future feature.
+- Better full-project framing and layered outdoor surfaces in the SVG renderer. Outdoor landscaping is kept on the original floor when duplicating floors.
+
+![House and outdoor editor](docs/house-outdoor.jpg)
+
+![Product measurement review](docs/product-import.jpg)
+
 ## Run locally
 
-Requires Node.js 22.13+ and pnpm 11+. No API keys or paid services are required.
+Requires Node.js 22.15+ and pnpm 11+. No API keys or paid services are required.
 
 ```sh
 corepack enable
@@ -40,11 +54,11 @@ pnpm test
 pnpm build
 ```
 
-The included Vinext configuration uses React, TypeScript, Three.js, and Vite with Next.js App Router conventions. The UI and 3D engine execute on the client; the server serves the application shell. The standard build targets Cloudflare Workers.
+The included Vinext configuration uses React, TypeScript, Three.js, and Vite with Next.js App Router conventions. The UI and 3D engine execute on the client; the server serves the application shell and imports public product pages. The standard build targets Cloudflare Workers.
 
 ## How to use
 
-1. Open the included **Residencial Aurora** example or choose **Projeto em branco**.
+1. Open the included **Residencial Aurora** example or choose **Novo projeto** for a furnished house, a building, a lot, or a blank project.
 2. Select **Parede**, **Cômodo**, or **Telhado**, then click two points in the viewport.
 3. Select **Porta** or **Janela** and click a wall on the active floor.
 4. Choose a furniture/appliance item and click the floor. Press **R** to rotate before placement.

@@ -18,7 +18,7 @@ Ground support is evaluated from floor slabs and stair ramps at the player's fee
 
 Version 1 JSON projects use meters and a Zod schema. Projects are autosaved to `habitat-studio:project:v1` in localStorage after a 500 ms delay. Import validates the full document and limits file size to 5 MB before replacing it. Export contains the canonical document only. Import, generation, and blank projects are reversible through undo.
 
-There is no remote project database in v0.1. A future cloud repository can wrap the same document operations without making the renderer responsible for persistence.
+There is no remote project database in v0.2. A future cloud repository can wrap the same document operations without making the renderer responsible for persistence.
 
 ## Rendering and resources
 
@@ -29,3 +29,15 @@ Removed model geometries, materials and label textures are disposed. Event liste
 ## Agent interoperability
 
 Where the browser implements `document.modelContext`, the same editor exposes `read_habitat_project`, `set_habitat_view`, and `add_habitat_objects`. The bridge is feature-detected and does not depend on a backend or AI API. Mutation tools validate inputs and use the same editor action and history as the visible controls.
+
+## Outdoor projects
+
+`projectType` is optional for backward compatibility. House, building and terrain starters use the same version-1 document. Flat terrain/lawn/paving are layered beneath floor slabs. Fences block movement, gate openings remain traversable, trees collide at their trunks, and pools block walking into the water. These tools model flat lots; terrain grading and earthworks are not implemented. Duplicating a floor excludes outdoor catalog entities.
+
+## Product import
+
+`POST /api/products/import` accepts one public HTTP(S) page URL. The server rejects IP literals, credentials, internal domains and nonstandard ports, checks A/AAAA records through public DNS, validates each redirect, limits HTML to 2 MiB and uses a 12-second timeout. The URL and network boundary are independent of parsing. Outbound requests use the platform fetch implementation; there are no user-supplied cookies or credentials. Production access continues to follow the existing Site audience.
+
+The parser reads explicit metric/imperial units and axis labels. Product dimensions are distinct from offer/shipping dimensions. Known storefront data is restricted to the primary product subtree. Numeric ranges or values without units remain missing for user review. Copied specifications use the same parser locally and are recorded as manual input. Storefronts requiring JavaScript, sign-in, or bot checks may require this fallback.
+
+Entities optionally hold `product` provenance: source URL/photo, brand/model, confirmed dimensions in meters, measurement source and evidence. This preserves old project compatibility. Imported model bounds are normalized to exactly match the confirmed width, height and depth; an arbitrary product URL is not treated as a 3D asset. The numeric inspector preserves precision instead of rounding imported measures to centimeters on focus/blur.

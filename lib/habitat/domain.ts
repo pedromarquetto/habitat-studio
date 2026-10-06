@@ -1,21 +1,29 @@
 import { z } from 'zod';
 
-export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp'] as const;
+export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object'] as const;
 export type Kind = typeof KINDS[number];
 export type View = '3d' | 'plan' | 'walk';
-export type Tool = 'select' | 'wall' | 'room' | 'roof' | 'place';
+export type Tool = 'select' | 'wall' | 'room' | 'roof' | 'place' | 'area' | 'line';
+const WebUrl = z.string().max(2048).url().refine(v => ['http:','https:'].includes(new URL(v).protocol), 'Use um link HTTP ou HTTPS.');
+export const ProductSourceSchema = z.object({
+  url: WebUrl, imageUrl: WebUrl.optional(), brand: z.string().max(120).optional(), model: z.string().max(120).optional(),
+  dimensions: z.object({w:z.number().positive().max(100),h:z.number().positive().max(30),d:z.number().positive().max(100)}),
+  measurementSource: z.enum(['page','manual','mixed']), evidence: z.array(z.string().max(250)).max(6),
+});
 export const EntitySchema = z.object({
   id: z.string().min(1).max(100), kind: z.enum(KINDS), name: z.string().max(120), floorId: z.string().min(1).max(100),
   x: z.number().finite().min(-200).max(200), z: z.number().finite().min(-200).max(200),
   rotation: z.number().finite().min(-36000).max(36000),
   w: z.number().finite().min(0.05).max(100), h: z.number().finite().min(0.05).max(30), d: z.number().finite().min(0.05).max(100),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/), apartment: z.string().max(80), hostId: z.string().max(100).optional(),
+  product: ProductSourceSchema.optional(),
 });
 export type Entity = z.infer<typeof EntitySchema>;
 export const FloorSchema = z.object({ id: z.string().min(1).max(100), name: z.string().min(1).max(80), elevation: z.number().finite().min(0).max(100) });
 export type Floor = z.infer<typeof FloorSchema>;
 export const ProjectSchema = z.object({
   version: z.literal(1), name: z.string().min(1).max(120), units: z.literal('m'),
+  projectType: z.enum(['house','building','terrain']).optional(),
   floors: z.array(FloorSchema).min(1).max(20), entities: z.array(EntitySchema).max(5000),
 }).superRefine((p, ctx) => {
   const floors = new Set(p.floors.map(f => f.id));
@@ -37,7 +45,7 @@ export const ProjectSchema = z.object({
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
-export interface CatalogItem { kind: Kind; name: string; section: 'structure' | 'furniture' | 'appliances'; w: number; h: number; d: number; color: string; hint: string }
+export interface CatalogItem { kind: Kind; name: string; section: 'structure' | 'furniture' | 'appliances' | 'outdoor'; w: number; h: number; d: number; color: string; hint: string }
 export const CATALOG: CatalogItem[] = [
   {kind:'wall',name:'Parede',section:'structure',w:4,h:2.8,d:.18,color:'#f1eee6',hint:'Desenhe entre dois pontos'},
   {kind:'room',name:'Cômodo',section:'structure',w:4,h:.16,d:4,color:'#bb936e',hint:'Piso e quatro paredes'},
@@ -57,7 +65,16 @@ export const CATALOG: CatalogItem[] = [
   {kind:'stove',name:'Fogão',section:'appliances',w:.65,h:.9,d:.65,color:'#d0d5d7',hint:'Quatro bocas'},
   {kind:'sink',name:'Pia',section:'appliances',w:1.25,h:.9,d:.65,color:'#dbd9d0',hint:'Bancada com cuba'},
   {kind:'toilet',name:'Vaso sanitário',section:'appliances',w:.45,h:.8,d:.75,color:'#f7f7f4',hint:'Louça branca'},
+  {kind:'object',name:'Objeto',section:'furniture',w:1,h:1,d:1,color:'#a9b8be',hint:'Volume com medidas personalizadas'},
+  {kind:'terrain',name:'Terreno',section:'outdoor',w:20,h:.18,d:25,color:'#b5a789',hint:'Desenhe os limites do lote'},
+  {kind:'lawn',name:'Gramado',section:'outdoor',w:5,h:.08,d:5,color:'#7c9c55',hint:'Desenhe uma área de jardim'},
+  {kind:'paving',name:'Calçada / pátio',section:'outdoor',w:4,h:.12,d:4,color:'#b8bbb2',hint:'Desenhe uma área pavimentada'},
+  {kind:'fence',name:'Cerca',section:'outdoor',w:4,h:1.3,d:.12,color:'#967653',hint:'Clique no início e no fim'},
+  {kind:'gate',name:'Portão',section:'outdoor',w:3,h:1.5,d:.15,color:'#526b62',hint:'Portão aberto para circulação'},
+  {kind:'pool',name:'Piscina',section:'outdoor',w:5,h:1.2,d:3,color:'#4da9bf',hint:'Desenhe a área da piscina'},
+  {kind:'tree',name:'Árvore',section:'outdoor',w:2.6,h:3.5,d:2.6,color:'#557b45',hint:'Árvore para o jardim'},
 ];
+export const AREA_KINDS:Kind[]=['terrain','lawn','paving','pool'];
 export const GRID = .25;
 export const PLAYER_RADIUS = .22;
 export const uid = () => {
@@ -131,7 +148,9 @@ export function collides(project:Project,x:number,z:number,feet:number):boolean 
       if(Math.abs(p.z)>e.d/2+PLAYER_RADIUS||Math.abs(p.x)>e.w/2+PLAYER_RADIUS)return false;
       return !project.entities.some(o=>o.kind==='door'&&o.hostId===e.id&&Math.abs(p.x-localPoint(e,o.x,o.z).x)<o.w/2-PLAYER_RADIUS&&feet+1.65<floor.elevation+o.h);
     }
-    if(['room','door','window','roof','stairs','plant','lamp'].includes(e.kind))return false;
+    if(['room','door','window','roof','stairs','plant','lamp','terrain','lawn','paving'].includes(e.kind))return false;
+    if(e.kind==='gate') { const p=localPoint(e,x,z); return Math.abs(p.z)<e.d/2+PLAYER_RADIUS && Math.abs(p.x)>e.w/2-.12-PLAYER_RADIUS && Math.abs(p.x)<e.w/2+PLAYER_RADIUS; }
+    if(e.kind==='tree')return Math.hypot(x-e.x,z-e.z)<Math.min(e.w,e.d)*.08+PLAYER_RADIUS;
     return inside(e,x,z,PLAYER_RADIUS*.7);
   });
 }
@@ -174,10 +193,32 @@ export function findSpawn(project:Project,floorId:string,roomId?:string):{x:numb
   return {x:0,z:-9,feet:0};
 }
 
-export function emptyProject():Project{return {version:1,name:'Meu projeto',units:'m',floors:[{id:uid(),name:'Térreo',elevation:0}],entities:[]};}
+export function emptyProject():Project{return {version:1,name:'Meu projeto',projectType:'house',units:'m',floors:[{id:uid(),name:'Térreo',elevation:0}],entities:[]};}
+export function createTerrain():Project {
+  const p=emptyProject();p.name='Meu terreno';p.projectType='terrain';
+  p.entities.push(entity('terrain',p.floors[0].id,0,0,{w:24,d:30}));return p;
+}
+export function createHouse():Project {
+  const p=createTerrain();p.name='Casa com quintal';p.projectType='house';const id=p.floors[0].id;
+  const add=(kind:Kind,x:number,z:number,extra:Partial<Entity>={})=>{const e=entity(kind,id,x,z,extra);p.entities.push(e);return e;};
+  const wall=(x:number,z:number,w:number,rotation=0)=>add('wall',x,z,{w,rotation});
+  const opening=(kind:'door'|'window',host:Entity,x:number,w?:number)=>{const pos=worldPoint(host,x,0);add(kind,pos.x,pos.z,{hostId:host.id,rotation:host.rotation,...(w?{w}:{})});};
+  add('lawn',0,0,{w:23,d:29,name:'Jardim'});add('paving',0,-9,{w:3,d:8,name:'Acesso à casa'});add('paving',-7,9,{w:8,d:6,name:'Pátio'});
+  add('room',-2,0,{w:8,d:10,name:'Sala e cozinha',apartment:'Casa'});add('room',4,-2.5,{w:4,d:5,name:'Quarto',apartment:'Casa'});add('room',4,2.5,{w:4,d:5,name:'Banheiro',apartment:'Casa',color:'#c4d6d0'});
+  const front=wall(0,-5,12),back=wall(0,5,12),left=wall(-6,0,10,90),right=wall(6,0,10,90);
+  opening('door',front,0,1.2);opening('window',front,-3,2);opening('window',front,4,1.5);
+  opening('door',back,-2,1.2);opening('window',back,4,1.2);opening('window',left,0,2);opening('window',right,2,1.5);
+  const partition=wall(2,0,10,90);opening('door',partition,2.5);opening('door',partition,-2.5);wall(4,0,4);
+  add('roof',0,0,{w:12.8,d:10.8});add('sofa',-4,-2,{rotation:90});add('table',-2.5,-2,{h:.45,w:1.3,d:.7});add('armchair',-1,-3,{rotation:180});
+  add('fridge',-5.4,3.9);add('stove',-4.5,4.2);add('sink',-3.4,4.2);add('table',-.5,2.5,{w:1.5,d:.9});add('chair',-.5,1.6);add('chair',-.5,3.4,{rotation:180});
+  add('bed',4,-2.3,{w:1.5,d:2});add('cabinet',4,-4.5,{w:1.7});add('toilet',5,4);add('sink',3.5,3.8,{w:1});add('plant',-5,-4);
+  add('pool',5,9,{w:6,d:3.5});for(const [x,z] of [[-9,6],[-9,-8],[9,-8],[9,12]])add('tree',x,z);
+  add('fence',-12,0,{w:30,rotation:90});add('fence',12,0,{w:30,rotation:90});add('fence',0,15,{w:24});add('fence',-6.75,-15,{w:10.5});add('fence',6.75,-15,{w:10.5});add('gate',0,-15);
+  return p;
+}
 export function createBuilding(count=2):Project {
   count=Math.max(1,Math.min(8,Math.round(count)));
-  const p:Project={version:1,name:'Residencial Aurora',units:'m',floors:[],entities:[]};
+  const p:Project={version:1,name:'Residencial Aurora',projectType:'building',units:'m',floors:[],entities:[]};
   for(let i=0;i<count;i++){
     const floor:Floor={id:uid(),name:i===0?'Térreo':`${i}º andar`,elevation:i*3.2};p.floors.push(floor);
     const add=(kind:Kind,x:number,z:number,extra:Partial<Entity>={})=>{const e=entity(kind,floor.id,x,z,extra);p.entities.push(e);return e;};
@@ -223,7 +264,7 @@ export function duplicateFloor(project:Project,sourceId:string):{project:Project
   if(project.floors.length>=20)throw new Error('Limite de 20 andares.');
   const elevation=Math.max(...project.floors.map(f=>f.elevation))+3.2;
   const floor:Floor={id:uid(),name:`${project.floors.length}º andar`,elevation};
-  const source=project.entities.filter(e=>e.floorId===sourceId&&e.kind!=='roof');
+  const source=project.entities.filter(e=>e.floorId===sourceId&&e.kind!=='roof'&&catalogFor(e.kind).section!=='outdoor');
   const remap=new Map(source.map(e=>[e.id,uid()]));
   const copies=source.map(e=>({...e,id:remap.get(e.id)!,floorId:floor.id,hostId:e.hostId?remap.get(e.hostId):undefined,apartment:e.apartment?e.apartment.replace(/\d+/,m=>String((project.floors.length+1)*100+(Number(m)%100))):''}));
   return{project:{...project,floors:[...project.floors,floor],entities:[...project.entities.filter(e=>e.kind!=='roof'),...copies,...project.entities.filter(e=>e.kind==='roof').map(e=>({...e,floorId:floor.id}))]},floorId:floor.id};

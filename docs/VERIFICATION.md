@@ -31,3 +31,32 @@ Verified on the desktop internal preview:
 The test browser has WebGL disabled. Visual and UI checks therefore exercised the real SVG compatibility renderer; hardware-accelerated WebGL rendering remains to be checked on a GPU-enabled browser. Held-key/touch input requires interactive verification. The standard desktop preview does not offer a viewport-resize capability, so mobile layout was reviewed in source only. Mouse look now uses primary-button drag rather than pointer lock; input ownership and sensitivity are covered by automated tests.
 
 The test context did not expose registered WebMCP tools. The optional bridge is feature-detected, but its registration/runtime integration could not be verified here. JSON structure/round-trip validation is automated; browser download/import permission handling still requires manual verification.
+
+
+# v0.2 verification
+
+The end-to-end story is: choose a house/lot → customize outdoors → paste a product link → read/review dimensions → inspect a proportional model → place it at metric scale → reload/save the project.
+
+## Automated
+
+22 tests pass (the original 13 plus nine product/outdoor cases). Added checks cover decimal/imperial conversion; structured product dimensions separated from shipping dimensions; unpackaged storefront specifications; explicit combined axis orders; unsafe URL/DNS targets; redirect/body-size validation; house/terrain generation and exterior collision; exact imported-model bounds and persisted product metadata; and copied specification text with punctuation and units in labels.
+
+A freshly downloaded real Consul CRM44MB product page was parsed successfully: width 62.2 cm, height 184.7 cm and depth 72.4 cm, using labelled measurements without packaging. The product name, brand and reference photo were also extracted. These dimensions were used in the UI preview and placement check.
+
+## Browser
+
+Verified the house starter, seven outdoor catalog entries, complete-lot framing, and layered ground rendering. The product import request reached the API, and its error state kept manual review available. In the restricted agent preview, the outbound DNS request could not complete; successful automatic remote lookup was not claimed from this preview.
+
+Copied specification text populated all three centimeter fields, created the proportional 3D preview, and enabled placement. Clicking the floor inserted a fridge at 0.622 × 1.847 × 0.724 m and retained the source link. After reload, the project retained 49 entities and the inspector displayed those exact measures. The inspector no longer rounds imported dimensions on focus/blur. Source classification clearly identifies copied/manual measurements.
+
+![House and outdoor catalog](house-outdoor.jpg)
+![Product review and proportional model](product-import.jpg)
+
+The browser uses the SVG compatibility renderer. GPU rendering and physical mobile/touch behavior remain outside this verification. The browser download event did not expose the exported file; JSON round-trip and metadata preservation are covered by automated tests instead.
+
+
+## Published API
+
+A direct authenticated request to the deployed `/api/products/import` endpoint returned HTTP 200 for the real Consul CRM44MB link. It returned the expected product name, fridge category, explicit unpackaged evidence, and dimensions `{width:62.2,height:184.7,depth:72.4}` in centimeters. This verified the production API → public DNS → storefront HTML → extraction → JSON boundary. No credentials are sent to the storefront. The earlier preview DNS failure was specific to the restricted preview runtime.
+
+The generated house rear doorway was moved to keep the kitchen counter out of the circulation path. The regression check walks continuously from the living room through that doorway into the yard.

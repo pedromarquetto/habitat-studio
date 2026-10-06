@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { Armchair, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Building2, Check, CookingPot, Copy, DoorOpen, Download, Footprints, Grid2X2, House, Layers3, Leaf, Lightbulb, Maximize, Minus, MousePointer2, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Refrigerator, RotateCw, Ruler, Save, Sofa, Square, SquareMousePointer, Trash2, Undo2, Upload, X, BedDouble, Bath, Columns3, LayoutGrid, SlidersHorizontal, CircleHelp, Scan, Pencil, Table2, AppWindow } from 'lucide-react';
+import { Armchair, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Building2, Check, CookingPot, Copy, DoorOpen, Download, Footprints, Grid2X2, House, Layers3, Leaf, Lightbulb, Maximize, Minus, MousePointer2, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Refrigerator, RotateCw, Ruler, Save, Sofa, Square, SquareMousePointer, Trash2, Undo2, Upload, X, BedDouble, Bath, Columns3, LayoutGrid, SlidersHorizontal, CircleHelp, Scan, Pencil, Table2, AppWindow, Fence, Trees, Waves, Map, Link2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,21 +11,22 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import Viewport from './Viewport';
-import { CATALOG, ProjectSchema, attachOpening, catalogFor, createBuilding, duplicateFloor, emptyProject, entity, removeEntity, roomFromPoints, snap, uid, updateEntity, wallFromPoints, type Entity, type Kind, type Project, type Tool, type View } from '@/lib/habitat/domain';
+import ProductImporter from './ProductImporter';
+import { AREA_KINDS, CATALOG, ProjectSchema, attachOpening, catalogFor, createBuilding, createHouse, createTerrain, duplicateFloor, emptyProject, entity, removeEntity, roomFromPoints, snap, uid, updateEntity, wallFromPoints, type Entity, type Kind, type Project, type Tool, type View } from '@/lib/habitat/domain';
 import type { EngineState, HabitatEngine, Pick } from '@/lib/habitat/engine';
 import { DEFAULT_LOOK_SENSITIVITY, normalizeLookSensitivity } from '@/lib/habitat/walk-controls';
 
 const STORAGE_KEY='habitat-studio:project:v1';
 const LOOK_SETTINGS_KEY='habitat-studio:mouse-sensitivity:v1';
-const icons:Record<Kind,ComponentType<{size?:number;strokeWidth?:number;className?:string}>>={wall:Columns3,room:Square,door:DoorOpen,window:AppWindow,roof:House,stairs:Layers3,sofa:Sofa,armchair:Armchair,bed:BedDouble,table:Table2,chair:Armchair,cabinet:Box,fridge:Refrigerator,stove:CookingPot,sink:Bath,toilet:Bath,plant:Leaf,lamp:Lightbulb};
-const sections=[{id:'structure',label:'Estrutura'},{id:'furniture',label:'Móveis'},{id:'appliances',label:'Equipamentos'}] as const;
+const icons:Record<Kind,ComponentType<{size?:number;strokeWidth?:number;className?:string}>>={wall:Columns3,room:Square,door:DoorOpen,window:AppWindow,roof:House,stairs:Layers3,sofa:Sofa,armchair:Armchair,bed:BedDouble,table:Table2,chair:Armchair,cabinet:Box,fridge:Refrigerator,stove:CookingPot,sink:Bath,toilet:Bath,plant:Leaf,lamp:Lightbulb,terrain:Map,lawn:Leaf,paving:Grid2X2,fence:Fence,gate:DoorOpen,pool:Waves,tree:Trees,object:Box};
+const sections=[{id:'structure',label:'Estrutura'},{id:'furniture',label:'Móveis'},{id:'appliances',label:'Equipamentos'},{id:'outdoor',label:'Área externa'}] as const;
 type DialogMode='building'|'empty'|'help'|null;
 
 function NumberField({label,value,onChange,min=.05,max=100,step=.1,disabled=false}:{label:string;value:number;onChange:(n:number)=>void;min?:number;max?:number;step?:number;disabled?:boolean}){
-  const [draft,setDraft]=useState(String(Math.round(value*100)/100));
+  const [draft,setDraft]=useState(String(Math.round(value*1000000)/1000000));
   const [lastValue,setLastValue]=useState(value);
-  if(value!==lastValue){setLastValue(value);setDraft(String(Math.round(value*100)/100));}
-  const commit=()=>{const n=Number(draft);if(draft.trim()===''||!Number.isFinite(n)||n<min||n>max){setDraft(String(Math.round(value*100)/100));return;}if(n!==value)onChange(n);};
+  if(value!==lastValue){setLastValue(value);setDraft(String(Math.round(value*1000000)/1000000));}
+  const commit=()=>{const n=Number(draft);if(draft.trim()===''||!Number.isFinite(n)||n<min||n>max){setDraft(String(Math.round(value*1000000)/1000000));return;}if(n!==value)onChange(n);};
   return <label className="number-field"><span>{label}</span><div><Input type="number" value={draft} min={min} max={max} step={step} disabled={disabled} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/><span>{label==='Rotação'?'°':'m'}</span></div></label>;
 }
 
@@ -35,6 +36,8 @@ export default function Studio(){
   const [selectedId,setSelectedId]=useState<string|null>(null);
   const [view,setView]=useState<View>('3d');
   const [tool,setTool]=useState<Tool>('select');
+  const [productOpen,setProductOpen]=useState(false),[placement,setPlacement]=useState<Partial<Entity>|null>(null);
+  const [projectTemplate,setProjectTemplate]=useState('house');
   const [placing,setPlacing]=useState<Kind>('sofa');
   const [drawStart,setDrawStart]=useState<{x:number;z:number}|null>(null);
   const [cutaway,setCutaway]=useState(true),[isolate,setIsolate]=useState(true),[grid,setGrid]=useState(true),[snapping,setSnapping]=useState(true);
@@ -60,7 +63,7 @@ export default function Studio(){
     history.current.past.push(projectRef.current);if(history.current.past.length>40)history.current.past.shift();history.current.future=[];
     projectRef.current=candidate;setProject(candidate);setHistoryStats({past:history.current.past.length,future:0});setSaved(false);return true;
   },[]);
-  const replace=useCallback((candidate:Project)=>{if(commit(candidate)){setFloorId(candidate.floors[0].id);setSelectedId(null);setDrawStart(null);setTool('select');setRoomFilter('all');setView('3d');}},[commit]);
+  const replace=useCallback((candidate:Project)=>{if(commit(candidate)){setFloorId(candidate.floors[0].id);setSelectedId(null);setDrawStart(null);setTool('select');setPlacement(null);setRoomFilter('all');setView('3d');}},[commit]);
   const undo=useCallback(()=>{
     const previous=history.current.past.pop();if(!previous)return;
     history.current.future.push(projectRef.current);projectRef.current=previous;setProject(previous);setSelectedId(null);setDrawStart(null);setFloorId(id=>previous.floors.some(f=>f.id===id)?id:previous.floors[0].id);setHistoryStats({past:history.current.past.length,future:history.current.future.length});setSaved(false);
@@ -104,8 +107,9 @@ export default function Studio(){
     if(commit({...projectRef.current,entities:[...projectRef.current.entities,copy,...children]}))setSelectedId(copy.id);
   };
   const activateTool=(kind:Kind)=>{
-    setPlacing(kind);setDrawStart(null);setSelectedId(null);setTool(['wall','room','roof'].includes(kind)?kind as Tool:'place');if(view==='walk')setView('3d');
-    if(['wall','room','roof'].includes(kind))toast.info(kind==='wall'?'Clique no início e no fim da parede.':'Clique em dois cantos da área.');
+    if(catalogFor(kind).section==='outdoor'&&activeFloor.elevation>0){changeFloor(project.floors.reduce((a,b)=>a.elevation<b.elevation?a:b).id);toast.info('A área externa será desenhada no térreo.');}
+    setPlacing(kind);setPlacement(null);setDrawStart(null);setSelectedId(null);setTool(AREA_KINDS.includes(kind)?'area':kind==='fence'?'line':['wall','room','roof'].includes(kind)?kind as Tool:'place');if(view==='walk')setView('3d');
+    if(['wall','room','roof','fence',...AREA_KINDS].includes(kind))toast.info(kind==='wall'||kind==='fence'?'Clique no início e no fim.':'Clique em dois cantos da área.');
   };
   const onPick=(pick:Pick)=>{
     if(tool==='select'){setSelectedId(pick.entityId);if(pick.entityId)setInspectorOpen(true);return;}
@@ -118,14 +122,15 @@ export default function Studio(){
         if(!wall||wall.floorId!==floorId){toast.info('Clique em uma parede do andar ativo.');return;}
         placed=attachOpening(project,placing,wall.id,pick.point);
         if(!placed){toast.error('A abertura não cabe nesse ponto. Escolha uma parede maior ou outra posição.');return;}
-      }else placed=entity(placing,floorId,point.x,point.z,{rotation});
-      if(commit({...projectRef.current,entities:[...projectRef.current.entities,placed]})){setSelectedId(placed.id);toast.success(`${catalogFor(placing).name} colocado(a).`);}
+      }else placed=entity(placing,floorId,point.x,point.z,{...placement,rotation});
+      if(commit({...projectRef.current,entities:[...projectRef.current.entities,placed]})){setSelectedId(placed.id);setInspectorOpen(true);toast.success(`${placed.name} colocado(a).`);if(placement){setTool('select');setPlacement(null);}}
     }else if(!drawStart)setDrawStart(point);
     else{
       let additions:Entity[]=[];
       if(tool==='wall'){const wall=wallFromPoints(floorId,drawStart,point);if(wall)additions=[wall];}
+      if(tool==='line'){const line=wallFromPoints(floorId,drawStart,point);if(line)additions=[entity(placing,floorId,line.x,line.z,{w:line.w,rotation:line.rotation})];}
       if(tool==='room')additions=roomFromPoints(floorId,drawStart,point);
-      if(tool==='roof'){const w=Math.abs(point.x-drawStart.x),d=Math.abs(point.z-drawStart.z);if(w>=1&&d>=1)additions=[entity('roof',floorId,(point.x+drawStart.x)/2,(point.z+drawStart.z)/2,{w,d})];}
+      if(tool==='roof'||tool==='area'){const w=Math.abs(point.x-drawStart.x),d=Math.abs(point.z-drawStart.z);if(w>=1&&d>=1)additions=[entity(tool==='roof'?'roof':placing,floorId,(point.x+drawStart.x)/2,(point.z+drawStart.z)/2,{w,d})];}
       if(!additions.length){toast.info('Desenhe uma área maior. Paredes: mínimo 0,5 m; áreas: mínimo 1 × 1 m.');return;}
       if(commit({...projectRef.current,entities:[...projectRef.current.entities,...additions]}))setSelectedId(additions[0].id);setDrawStart(null);
     }
@@ -181,17 +186,17 @@ export default function Studio(){
     return()=>lifecycle.abort();
   },[commit]);
 
-  const engineState:EngineState=useMemo(()=>({project,floorId,view,isolate,cutaway,grid,selectedId,tool,placing,drawStart,snapping,focusId,rotation,lookSensitivity}),[project,floorId,view,isolate,cutaway,grid,selectedId,tool,placing,drawStart,snapping,focusId,rotation,lookSensitivity]);
+  const engineState:EngineState=useMemo(()=>({project,floorId,view,isolate,cutaway,grid,selectedId,tool,placing,drawStart,snapping,focusId,rotation,lookSensitivity,placement}),[project,floorId,view,isolate,cutaway,grid,selectedId,tool,placing,drawStart,snapping,focusId,rotation,lookSensitivity,placement]);
   const changeLookSensitivity=(value:number)=>{const next=normalizeLookSensitivity(value);setLookSensitivity(next);try{localStorage.setItem(LOOK_SETTINGS_KEY,String(next));}catch{}};
   const setEngine=useCallback((engine:HabitatEngine|null)=>{engineRef.current=engine;},[]);
-  const toolLabel=tool==='select'?'Selecionar':tool==='place'?catalogFor(placing).name:catalogFor(tool as Kind).name;
+  const toolLabel=tool==='select'?'Selecionar':placement?.name??catalogFor(placing).name;
   const guidance=view==='walk'?'WASD para andar · Shift para correr · Segure e arraste para olhar':tool==='select'?'Arraste para orbitar · Scroll para aproximar · Clique para selecionar':tool==='place'?(placing==='door'||placing==='window'?'Clique em uma parede para inserir a abertura':'Clique no piso para colocar · R para girar · Esc para sair'):drawStart?'Clique no segundo ponto para concluir · Esc para cancelar':'Clique no primeiro ponto · Esc para cancelar';
 
   return <main className={`studio ${view==='walk'?'walking':''}`}>
     <Toaster position="bottom-center"/>
     <header className="app-header">
       <div className="brand"><div className="brand-mark"><House size={22}/></div><div><strong>habitat<span>studio</span></strong><small>CONSTRUIR & EXPLORAR</small></div></div>
-      <div className="project-heading"><span className="header-divider"/><Pencil size={14}/><Input aria-label="Nome do projeto" value={project.name} maxLength={120} onChange={e=>{if(e.target.value.trim())commit({...projectRef.current,name:e.target.value});}}/><span className="version-chip">v0.1</span></div>
+      <div className="project-heading"><span className="header-divider"/><Pencil size={14}/><Input aria-label="Nome do projeto" value={project.name} maxLength={120} onChange={e=>{if(e.target.value.trim())commit({...projectRef.current,name:e.target.value});}}/><span className="version-chip">v0.2</span></div>
       <div className="header-actions"><span className={`save-state ${storageError?'warning':''}`} title={storageError||'Salvo apenas neste navegador'}>{saved?<Check size={14}/>:<Save size={14}/>}<span>{storageError?'Exportar para salvar':saved?'Salvo localmente':'Salvando…'}</span></span><Button variant="ghost" size="icon" title="Importar projeto" aria-label="Importar projeto" onClick={()=>importRef.current?.click()}><Upload/></Button><Button variant="outline" className="export-button" onClick={exportProject}><Download/><span>Exportar</span></Button><Button variant="ghost" size="icon" title="Ajuda e atalhos" aria-label="Ajuda e atalhos" onClick={()=>setDialog('help')}><CircleHelp/></Button></div>
       <input type="file" accept=".json,application/json" hidden ref={importRef} onChange={e=>{const file=e.target.files?.[0];if(file)void importProject(file);e.currentTarget.value='';}}/>
     </header>
@@ -201,14 +206,14 @@ export default function Studio(){
         <div className="panel-heading"><h2>Biblioteca</h2><Button variant="ghost" size="icon-sm" aria-label="Recolher biblioteca" onClick={()=>setLibraryOpen(false)}><PanelLeftClose size={16}/></Button></div>
         <p className="panel-intro">Tudo para dar forma ao seu espaço.</p>
         <Tabs value={category} onValueChange={setCategory} className="library-tabs">
-          <TabsList className="catalog-tabs"><TabsTrigger value="structure">Construir</TabsTrigger><TabsTrigger value="furniture">Mobiliar</TabsTrigger><TabsTrigger value="appliances">Equipar</TabsTrigger></TabsList>
+          <TabsList className="catalog-tabs"><TabsTrigger value="structure">Construir</TabsTrigger><TabsTrigger value="furniture">Mobiliar</TabsTrigger><TabsTrigger value="appliances">Equipar</TabsTrigger><TabsTrigger value="outdoor">Área externa</TabsTrigger></TabsList>
           {sections.map(section=><TabsContent value={section.id} key={section.id} className="catalog-content"><div className="eyebrow">{section.label}<span>{CATALOG.filter(i=>i.section===section.id).length} itens</span></div><div className="catalog-grid">{CATALOG.filter(i=>i.section===section.id).map(item=>{const Icon=icons[item.kind],active=tool!=='select'&&placing===item.kind;return <button className={`catalog-card ${active?'active':''}`} key={item.kind} onClick={()=>activateTool(item.kind)} title={item.hint} aria-pressed={active} data-testid={`catalog-${item.kind}`}><div className={`catalog-icon ${item.section}`}><Icon size={30} strokeWidth={1.35}/></div><strong>{item.name}</strong><span>{item.kind==='wall'?'Desenhar':item.kind==='room'?'Criar área':item.kind==='roof'?'Cobrir área':`${item.w.toFixed(1)} × ${item.d.toFixed(1)} m`}</span></button>;})}</div></TabsContent>)}
         </Tabs>
-        <div className="library-bottom"><div className="library-note"><SquareMousePointer size={18}/><p>{tool==='select'?'Escolha um elemento para começar.':guidance}</p></div><Button variant="outline" className="generate-button" onClick={()=>setDialog('building')}><Building2 size={17}/>Gerar prédio</Button><Button variant="ghost" className="new-project" onClick={()=>setDialog('empty')}><Plus size={15}/>Projeto em branco</Button></div>
+        <div className="library-bottom"><Button variant="outline" className="import-product-button" onClick={()=>setProductOpen(true)}><Link2 size={17}/>Produto por link</Button><div className="library-note"><SquareMousePointer size={18}/><p>{tool==='select'?'Escolha um elemento para começar.':guidance}</p></div><Button variant="outline" className="generate-button" onClick={()=>setDialog('building')}><Building2 size={17}/>Gerar prédio</Button><Button variant="ghost" className="new-project" onClick={()=>setDialog('empty')}><Plus size={15}/>Novo projeto</Button></div>
       </aside>
 
       <section className="viewport-shell" aria-label="Editor arquitetônico">
-        <div className="viewport-heading"><div><Building2 size={16}/><span>{activeFloor.name}</span><span className="breadcrumb-dot">/</span><span className="muted">{view==='walk'?'Exploração':isolate?'Andar ativo':'Prédio completo'}</span></div><div className="view-switch" role="group" aria-label="Modo de visualização"><button className={view==='3d'?'active':''} onClick={()=>changeView('3d')} aria-pressed={view==='3d'}><Box size={15}/>3D</button><button className={view==='plan'?'active':''} onClick={()=>changeView('plan')} aria-pressed={view==='plan'}><Grid2X2 size={15}/>Planta</button><button className={view==='walk'?'active walk-mode':''} onClick={()=>changeView('walk')} aria-pressed={view==='walk'}><Footprints size={15}/><span>Caminhar</span></button></div></div>
+        <div className="viewport-heading"><div><House size={16}/><span>{activeFloor.name}</span><span className="breadcrumb-dot">/</span><span className="muted">{view==='walk'?'Exploração':isolate?'Andar ativo':'Projeto completo'}</span></div><div className="view-switch" role="group" aria-label="Modo de visualização"><button className={view==='3d'?'active':''} onClick={()=>changeView('3d')} aria-pressed={view==='3d'}><Box size={15}/>3D</button><button className={view==='plan'?'active':''} onClick={()=>changeView('plan')} aria-pressed={view==='plan'}><Grid2X2 size={15}/>Planta</button><button className={view==='walk'?'active walk-mode':''} onClick={()=>changeView('walk')} aria-pressed={view==='walk'}><Footprints size={15}/><span>Caminhar</span></button></div></div>
         <div className="scene-area">
           <Viewport state={engineState} callbacks={{onPick,onHover:setCursor,onLook:setLooking,onError:m=>toast.info(m),onPosition:setPosition}} onEngine={setEngine}/>
           {!libraryOpen&&view!=='walk'&&<Button className="open-library" variant="outline" size="icon" aria-label="Abrir biblioteca" onClick={()=>setLibraryOpen(true)}><PanelLeftOpen/></Button>}
@@ -231,6 +236,7 @@ export default function Studio(){
             <label className="text-field">Apartamento / unidade<Input placeholder="Ex.: Apto 101" value={selected.apartment} maxLength={80} onChange={e=>edit({apartment:e.target.value})}/></label>
             <div className="property-section-title">Posição & dimensões</div><div className="field-grid"><NumberField label="Posição X" value={selected.x} min={-150} max={150} disabled={Boolean(selected.hostId)} onChange={x=>edit({x})}/><NumberField label="Posição Z" value={selected.z} min={-150} max={150} disabled={Boolean(selected.hostId)} onChange={z=>edit({z})}/><NumberField label="Largura" value={selected.w} onChange={w=>edit({w})}/><NumberField label={selected.kind==='wall'?'Espessura':'Profundidade'} value={selected.d} disabled={Boolean(selected.hostId)} onChange={d=>edit({d})}/><NumberField label="Altura" value={selected.h} max={30} onChange={h=>edit({h})}/><NumberField label="Rotação" value={selected.rotation} min={-36000} max={36000} step={15} disabled={Boolean(selected.hostId)} onChange={rotation=>edit({rotation})}/></div>
             {selected.hostId&&<p className="property-note">Posição e rotação acompanham a parede.</p>}
+            {selected.product&&<div className="imported-product-info"><strong>Produto importado</strong><p>{selected.product.brand} {selected.product.model}</p><p>{(selected.w*100).toLocaleString('pt-BR')} × {(selected.h*100).toLocaleString('pt-BR')} × {(selected.d*100).toLocaleString('pt-BR')} cm <span>(L × A × P)</span></p><p>Modelo proporcional · medidas {selected.w!==selected.product.dimensions.w||selected.h!==selected.product.dimensions.h||selected.d!==selected.product.dimensions.d?'alteradas no projeto':selected.product.measurementSource==='page'?'da página':selected.product.measurementSource==='manual'?'preenchidas':'revisadas'}</p><a href={selected.product.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={13}/>Ver produto na loja</a></div>}
             <label className="color-field"><span>Cor do material</span><input type="color" value={selected.color} aria-label="Cor do material" onChange={e=>edit({color:e.target.value})}/><span>{selected.color.toUpperCase()}</span></label>
             <div className="property-actions"><Button variant="outline" size="sm" onClick={duplicateSelected}><Copy size={14}/>Duplicar</Button><Button variant="outline" size="sm" onClick={()=>{setFocusId(null);engineRef.current?.focus(selected.id);}}><Scan size={14}/>Focar</Button><Button variant="ghost" size="icon-sm" aria-label="Excluir selecionado" onClick={removeSelected}><Trash2 size={15}/></Button></div>
           </div>:<div className="project-overview"><div className="overview-illustration"><Building2 size={30} strokeWidth={1.3}/></div><strong>{project.name}</strong><span>Seu espaço, de fora para dentro.</span><div className="project-metrics"><div><b>{project.floors.length.toString().padStart(2,'0')}</b><span>Andares</span></div><div><b>{totalArea.toLocaleString('pt-BR',{maximumFractionDigits:0})}</b><span>m² de piso</span></div><div><b>{project.entities.length}</b><span>Elementos</span></div></div></div>}
@@ -243,10 +249,12 @@ export default function Studio(){
       </aside>
     </div>
 
-    <Dialog open={dialog!==null} onOpenChange={open=>{if(!open)setDialog(null);}}><DialogContent className="studio-dialog"><DialogHeader><DialogTitle>{dialog==='building'?'Criar um prédio completo':dialog==='empty'?'Começar um projeto em branco':'Construir. Mobiliar. Explorar.'}</DialogTitle><DialogDescription>{dialog==='building'?'Uma base com dois apartamentos por andar, cômodos mobiliados, portas, janelas, escadas e cobertura.':dialog==='empty'?'O projeto atual será substituído. Você pode desfazer essa ação ou exportar uma cópia antes.':'Use a biblioteca para desenhar espaços e colocar elementos. Todas as medidas estão em metros.'}</DialogDescription></DialogHeader>
-      {dialog==='building'&&<><NumberField label="Andares" value={buildingFloors} min={1} max={8} step={1} onChange={n=>setBuildingFloors(Math.round(n))}/><p className="dialog-note">Substitui o projeto aberto. A ação pode ser desfeita.</p></>}
-      {dialog==='help'&&<div className="help-content"><p><b>Paredes, cômodos e telhados</b><span>Selecione na biblioteca e clique em dois pontos do piso.</span></p><p><b>Portas e janelas</b><span>Selecione na biblioteca e clique sobre uma parede.</span></p><p><b>Objetos</b><span>Clique no piso para colocar. Selecione para editar posição, medidas e cor.</span></p><p><b>Caminhar</b><span>WASD movimenta, Shift corre. Segure o botão esquerdo e arraste para olhar, ou use as setas. Ajuste a sensibilidade no canto inferior direito. As escadas conectam andares; use “Ir para” para acesso direto.</span></p><div className="shortcut-grid"><span><kbd>R</kbd>Girar 90°</span><span><kbd>Del</kbd>Excluir</span><span><kbd>Ctrl Z</kbd>Desfazer</span><span><kbd>Esc</kbd>Cancelar / parar de olhar</span></div><p className="local-storage-note">O salvamento é local, neste navegador. Exporte um arquivo para guardar uma cópia ou abrir em outro dispositivo.</p></div>}
-      <DialogFooter><Button variant="outline" onClick={()=>setDialog(null)}>{dialog==='help'?'Entendi':'Cancelar'}</Button>{dialog==='building'&&<Button onClick={()=>{replace(createBuilding(buildingFloors));setDialog(null);toast.success('Prédio criado. Entre em Caminhar para explorar.');}}><Building2 size={16}/>Criar prédio</Button>}{dialog==='empty'&&<Button onClick={()=>{replace(emptyProject());setDialog(null);toast.success('Projeto em branco criado.');}}>Criar projeto</Button>}</DialogFooter>
+    <ProductImporter open={productOpen} onOpenChange={setProductOpen} onReady={item=>{setPlacement(item);setPlacing(item.kind);setTool('place');setDrawStart(null);setSelectedId(null);setRotation(0);if(view==='walk')setView('3d');toast.info('Clique no piso para posicionar o produto nas medidas revisadas.');}}/>
+    <Dialog open={dialog!==null} onOpenChange={open=>{if(!open)setDialog(null);}}><DialogContent className="studio-dialog"><DialogHeader><DialogTitle>{dialog==='building'?'Criar um prédio completo':dialog==='empty'?'Começar um projeto':'Construir. Mobiliar. Explorar.'}</DialogTitle><DialogDescription>{dialog==='building'?'Uma base com dois apartamentos por andar, cômodos mobiliados, portas, janelas, escadas e cobertura.':dialog==='empty'?'Escolha a base. Ela substitui o projeto aberto; a ação pode ser desfeita.':'Use a biblioteca para desenhar espaços e colocar elementos. Todas as medidas estão em metros.'}</DialogDescription></DialogHeader>
+      {dialog==='empty'&&<div className="project-template-list" role="group" aria-label="Tipo de projeto">{[{id:'house',label:'Casa com quintal',hint:'Casa mobiliada, jardim, pátio e piscina',Icon:House},{id:'building',label:'Prédio',hint:'Apartamentos mobiliados em vários andares',Icon:Building2},{id:'terrain',label:'Terreno',hint:'Lote de 24 × 30 m para começar do zero',Icon:Map},{id:'blank',label:'Projeto em branco',hint:'Um andar vazio para desenhar livremente',Icon:Square}].map(({id,label,hint,Icon})=><button key={id} aria-pressed={projectTemplate===id} className={projectTemplate===id?'active':''} onClick={()=>setProjectTemplate(id)}><Icon size={23}/><div><strong>{label}</strong><span>{hint}</span></div>{projectTemplate===id&&<Check size={17}/>}</button>)}</div>}
+      {(dialog==='building'||dialog==='empty'&&projectTemplate==='building')&&<><NumberField label="Andares" value={buildingFloors} min={1} max={8} step={1} onChange={n=>setBuildingFloors(Math.round(n))}/><p className="dialog-note">Substitui o projeto aberto. A ação pode ser desfeita.</p></>}
+      {dialog==='help'&&<div className="help-content"><p><b>Paredes, cômodos e telhados</b><span>Selecione na biblioteca e clique em dois pontos do piso.</span></p><p><b>Portas e janelas</b><span>Selecione na biblioteca e clique sobre uma parede.</span></p><p><b>Área externa</b><span>Desenhe terrenos, gramados, pátios e piscinas entre dois cantos. Cercas usam dois pontos. Deixe uma abertura para o portão; ele fica aberto para caminhar.</span></p><p><b>Produto por link</b><span>Cole o link da loja, revise largura, altura e profundidade em centímetros e clique no piso para posicionar. O modelo mantém a escala e o link de origem.</span></p><p><b>Objetos</b><span>Clique no piso para colocar. Selecione para editar posição, medidas e cor.</span></p><p><b>Caminhar</b><span>WASD movimenta, Shift corre. Segure o botão esquerdo e arraste para olhar, ou use as setas. Ajuste a sensibilidade no canto inferior direito. As escadas conectam andares; use “Ir para” para acesso direto.</span></p><div className="shortcut-grid"><span><kbd>R</kbd>Girar 90°</span><span><kbd>Del</kbd>Excluir</span><span><kbd>Ctrl Z</kbd>Desfazer</span><span><kbd>Esc</kbd>Cancelar / parar de olhar</span></div><p className="local-storage-note">O salvamento é local, neste navegador. Exporte um arquivo para guardar uma cópia ou abrir em outro dispositivo.</p></div>}
+      <DialogFooter><Button variant="outline" onClick={()=>setDialog(null)}>{dialog==='help'?'Entendi':'Cancelar'}</Button>{dialog==='building'&&<Button onClick={()=>{replace(createBuilding(buildingFloors));setDialog(null);toast.success('Prédio criado. Entre em Caminhar para explorar.');}}><Building2 size={16}/>Criar prédio</Button>}{dialog==='empty'&&<Button onClick={()=>{replace(projectTemplate==='house'?createHouse():projectTemplate==='terrain'?createTerrain():projectTemplate==='building'?createBuilding(buildingFloors):emptyProject());setDialog(null);toast.success('Projeto criado.');}}>Criar projeto</Button>}</DialogFooter>
     </DialogContent></Dialog>
   </main>;
 }

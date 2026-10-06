@@ -7,7 +7,8 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
   const mat=material(e.color);
   const dark=material('#46524e'),white=material('#f2efe7'),wood=material('#956e4e');
   const box=(x:number,y:number,z:number,w:number,h:number,d:number,m:THREE.Material=mat)=>{
-    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
+    const surface=['room','terrain','lawn','paving'].includes(e.kind);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,surface?Math.max(1,Math.ceil(w/2)):1,1,surface?Math.max(1,Math.ceil(d/2)):1),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
   };
   const cylinder=(x:number,y:number,z:number,r:number,h:number,m:THREE.Material=mat)=>{
     const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,18),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
@@ -30,6 +31,33 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
       for(let x=-e.w/2+.35;x<e.w/2;x+=.35)points.push(new THREE.Vector3(x,.003,-e.d/2),new THREE.Vector3(x,.003,e.d/2));
       group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),lineMat));
       break;
+    }
+    case 'terrain': case 'lawn': case 'paving':{
+      const top=e.kind==='terrain'?-.13:e.kind==='lawn'?-.065:-.02;
+      box(0,top-e.h/2,0,e.w,e.h,e.d);
+      if(e.kind==='paving'){
+        const lines:THREE.Vector3[]=[];for(let x=-e.w/2+1;x<e.w/2;x++)lines.push(new THREE.Vector3(x,top+.002,-e.d/2),new THREE.Vector3(x,top+.002,e.d/2));
+        for(let z=-e.d/2+1;z<e.d/2;z++)lines.push(new THREE.Vector3(-e.w/2,top+.002,z),new THREE.Vector3(e.w/2,top+.002,z));
+        group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lines),new THREE.LineBasicMaterial({color:'#94998f'})));
+      }
+      break;
+    }
+    case 'fence':{
+      const posts=Math.max(2,Math.ceil(e.w/1.7)+1);for(let i=0;i<posts;i++)box(-e.w/2+.05+(e.w-.1)*i/(posts-1),e.h/2,0,.1,e.h,e.d);
+      for(const t of [.35,.75])box(0,e.h*t,0,e.w,.12,e.d*.65);break;
+    }
+    case 'gate':{
+      for(const x of [-1,1])box(x*(e.w/2-.06),e.h/2,0,.12,e.h,e.d);
+      // The leaf slides alongside the opening; the center stays traversable.
+      box(-e.w*.75,e.h*.46,-e.d*.7,e.w*.5,e.h*.82,e.d*.4);break;
+    }
+    case 'pool':{
+      const rim=material('#ddd8c9');box(0,-e.h,0,e.w,.12,e.d,rim);
+      for(const x of [-1,1])box(x*(e.w/2-.1),-e.h/2,0,.2,e.h,e.d,rim);
+      for(const z of [-1,1])box(0,-e.h/2,z*(e.d/2-.1),e.w,e.h,.2,rim);
+      box(0,-.15,0,Math.max(.05,e.w-.4),.04,Math.max(.05,e.d-.4));
+      for(const z of [-1,1])box(0,.05,z*(e.d/2-.12),e.w,.1,.24,rim);
+      for(const x of [-1,1])box(x*(e.w/2-.12),.05,0,.24,.1,e.d,rim);break;
     }
     case 'door': case 'window':{
       const base=openingBase(e),height=cutaway?Math.min(e.h,Math.max(0,1.1-base)):e.h;
@@ -68,6 +96,11 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
     default:{
       group.scale.set(e.w,e.h,e.d);
       switch(e.kind){
+        case 'object':box(0,.5,0,1,1,1);break;
+        case 'tree':{
+          cylinder(0,.3,0,.07,.6,wood);
+          for(const [x,y,z,r] of [[0,.72,0,.3],[-.17,.63,.1,.23],[.17,.68,-.1,.23]]){const mesh=new THREE.Mesh(new THREE.SphereGeometry(r,12,10),mat);mesh.position.set(x,y,z);mesh.castShadow=true;group.add(mesh);}break;
+        }
         case 'sofa':
           box(0,.18,0,.95,.28,.95);box(0,.68,-.38,.94,.64,.2);box(-.44,.48,0,.14,.65,1);box(.44,.48,0,.14,.65,1);
           for(const x of [-.26,0,.26])box(x,.44,.06,.25,.22,.72);
@@ -93,6 +126,12 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
         case 'lamp':cylinder(0,.03,0,.32,.06,dark);cylinder(0,.5,0,.025,.9,dark);cylinder(0,.9,0,.45,.22);break;
       }
     }
+  }
+  if(e.product){
+    const bounds=new THREE.Box3().setFromObject(group),size=bounds.getSize(new THREE.Vector3());
+    group.scale.multiply(new THREE.Vector3(e.w/Math.max(size.x,.001),e.h/Math.max(size.y,.001),e.d/Math.max(size.z,.001)));
+    const normalized=new THREE.Box3().setFromObject(group),offset=normalized.getCenter(new THREE.Vector3());offset.y=normalized.min.y;
+    for(const child of group.children)child.position.sub(offset.clone().divide(group.scale));
   }
   // Child picking always resolves to the stable document entity.
   group.traverse(obj=>{obj.userData.entityId=e.id;});

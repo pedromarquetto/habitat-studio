@@ -5,7 +5,7 @@ import { makeModel, disposeObject } from './models';
 import { catalogFor, findSpawn, movePlayer, type Entity, type Kind, type Project, type Tool, type View } from './domain';
 import { WalkLook } from './walk-controls';
 
-export interface EngineState {project:Project;floorId:string;view:View;isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number}
+export interface EngineState {project:Project;floorId:string;view:View;isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null}
 export interface Pick {point:{x:number;z:number};entityId:string|null}
 export interface EngineCallbacks {onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void}
 
@@ -90,6 +90,7 @@ export class HabitatEngine {
       else{this.controls.target.y=elevation;this.planControls.target.set(0,elevation,0);this.planCamera.position.set(0,elevation+80,0);this.planControls.update();}
     }
     if(next.view==='walk'&&docChanged&&previous)this.player=findSpawn(next.project,next.floorId);
+    if(next.view!=='walk'&&(!previous||docChanged&&previous.floorId!==next.floorId))this.home();
     this.highlight();
     if(previous?.tool!==next.tool||previous?.placing!==next.placing||previous?.view!==next.view){disposeObject(this.ghost);this.ghost.clear();}
     if(next.focusId&&previous?.focusId!==next.focusId)this.focus(next.focusId);
@@ -102,6 +103,7 @@ export class HabitatEngine {
       if(s.view!=='walk'&&s.isolate&&floor.id!==s.floorId)continue;
       if(e.kind==='roof'&&(s.view==='plan'||(s.cutaway&&s.view!=='walk')))continue;
       const model=makeModel(e,s.project.entities,s.view!=='walk'&&s.cutaway&&(s.isolate||e.floorId===s.floorId));
+      if(this.software){const layer=({terrain:-40,lawn:-30,paving:-20} as Partial<Record<Kind,number>>)[e.kind];if(layer!==undefined)model.traverse(o=>{o.renderOrder=layer;});}
       model.position.set(e.x,floor.elevation,e.z);model.rotation.y=e.rotation*Math.PI/180;this.root.add(model);this.objects.set(e.id,model);
       if(e.kind==='room'&&s.view!=='walk')this.label(e,model);
     }
@@ -155,11 +157,11 @@ export class HabitatEngine {
     const s=this.state,quantize=(n:number)=>s.snapping?Math.round(n*4)/4:n;
     const x=quantize(point.x),z=quantize(point.z),floor=s.project.floors.find(f=>f.id===s.floorId)!;
     if(s.tool==='place'&&!['door','window'].includes(s.placing)){
-      const item=catalogFor(s.placing);const mesh=new THREE.Mesh(new THREE.BoxGeometry(item.w,item.h,item.d),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.35,transparent:true}));mesh.position.set(x,floor.elevation+item.h/2,z);mesh.rotation.y=s.rotation*Math.PI/180;this.ghost.add(mesh);
+      const item={...catalogFor(s.placing),...s.placement};const mesh=new THREE.Mesh(new THREE.BoxGeometry(item.w,item.h,item.d),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.35,transparent:true}));mesh.position.set(x,floor.elevation+item.h/2,z);mesh.rotation.y=s.rotation*Math.PI/180;this.ghost.add(mesh);
     }else if(s.drawStart){
       const a=s.drawStart;
-      if(s.tool==='wall'){
-        const length=Math.hypot(x-a.x,z-a.z);const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.05,length),1.1,.18),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.4,transparent:true}));mesh.position.set((x+a.x)/2,floor.elevation+.55,(z+a.z)/2);mesh.rotation.y=-Math.atan2(z-a.z,x-a.x);this.ghost.add(mesh);
+      if(s.tool==='wall'||s.tool==='line'){
+        const length=Math.hypot(x-a.x,z-a.z),item=catalogFor(s.placing),h=Math.min(item.h,1.3);const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.05,length),h,item.d),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.4,transparent:true}));mesh.position.set((x+a.x)/2,floor.elevation+h/2,(z+a.z)/2);mesh.rotation.y=-Math.atan2(z-a.z,x-a.x);this.ghost.add(mesh);
       }else{
         const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.05,Math.abs(x-a.x)),.035,Math.max(.05,Math.abs(z-a.z))),new THREE.MeshBasicMaterial({color:'#4b9166',opacity:.35,transparent:true}));mesh.position.set((x+a.x)/2,floor.elevation+.035,(z+a.z)/2);this.ghost.add(mesh);
       }
@@ -204,7 +206,8 @@ export class HabitatEngine {
   home(){
     this.dirty=true;
     const elevation=this.state?.project.floors.find(f=>f.id===this.state?.floorId)?.elevation??0;
-    this.camera.position.set(17,elevation+18,22);this.camera.rotation.set(0,0,0);this.controls.target.set(0,elevation,0);this.controls.update();
+    const bounds=new THREE.Box3().setFromObject(this.root),size=bounds.getSize(new THREE.Vector3()),center=bounds.isEmpty()?new THREE.Vector3(0,elevation,0):bounds.getCenter(new THREE.Vector3());
+    const span=Math.max(size.x,size.z,8),distance=span*1.65;this.camera.position.copy(center).add(new THREE.Vector3(17,18,22).normalize().multiplyScalar(distance));this.camera.rotation.set(0,0,0);this.controls.target.copy(center);this.controls.update();
     this.planCamera.position.set(0,elevation+80,0);this.planCamera.zoom=1;this.planControls.target.set(0,elevation,0);this.planCamera.updateProjectionMatrix();this.planControls.update();
   }
   zoom(direction:number){this.dirty=true;if(this.state?.view==='plan'){this.planCamera.zoom=Math.max(.3,Math.min(12,this.planCamera.zoom*(direction>0?1.25:.8)));this.planCamera.updateProjectionMatrix();}else if(this.state?.view!=='walk'){const vec=this.camera.position.clone().sub(this.controls.target);vec.multiplyScalar(direction>0?.8:1.25);this.camera.position.copy(this.controls.target).add(vec);this.controls.update();}}
