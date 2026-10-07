@@ -57,7 +57,7 @@ test('new appliances and woodwork have distinct usable geometry and retain exact
 test('real materials preserve geometry/document identity and shared maps survive model disposal',()=>{
   const e=d.entity('baseCabinet','f',0,0,{finish:'wood'}),before=JSON.stringify(e),model=makeModel(e,[e]),bounds=new THREE.Box3().setFromObject(model),library=new RealMaterials();
   assert.equal(defaultFinish(e),'wood');library.apply(model,e);assert.deepEqual(new THREE.Box3().setFromObject(model),bounds);assert.equal(JSON.stringify(e),before);
-  const material=model.children.find(o=>o instanceof THREE.Mesh).material,map=material.map;assert.ok(map instanceof THREE.DataTexture);assert.ok(material.bumpMap);assert.equal(material.metalness,0);
+  const material=model.children.find(o=>o instanceof THREE.Mesh).material,map=material.map;assert.ok(map instanceof THREE.DataTexture);assert.ok(material.normalMap);assert.ok(material.roughnessMap);assert.notEqual(material.map,material.roughnessMap);assert.equal(material.normalMap.colorSpace,THREE.NoColorSpace);assert.equal(material.metalness,0);
   let disposed=0;map.addEventListener('dispose',()=>disposed++);disposeObject(model);assert.equal(disposed,0);library.dispose();assert.equal(disposed,1);
   const metal=d.entity('baseCabinet','f',0,0,{finish:'metal'}),metalModel=makeModel(metal,[metal]),metalLibrary=new RealMaterials();metalLibrary.apply(metalModel,metal);
   assert.equal(metalModel.children.find(o=>o instanceof THREE.Mesh).material.metalness,.72,'explicit finish overrides catalog defaults');disposeObject(metalModel);metalLibrary.dispose();

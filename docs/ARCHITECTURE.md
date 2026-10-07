@@ -78,7 +78,7 @@ The optional `light` object stores power, finite intensity from 0 to 2, and a he
 
 `reachableSwitch` raycasts the actual meshes. Only a first-hit linked switch within 2.5 m can be activated, so other geometry blocks interaction. A primary click toggles only if the gesture never exceeds five pixels; dragging and returning to its origin still counts as navigation. E acts once per non-repeated keydown. Opening the lighting dialog pauses movement input. Changes that preserve `sameWalkGeometry` do not respawn or reorient the player.
 
-Real mode builds lights for the player's physical floor, capped at 16 active sources. SVGRenderer ignores some material/light intensity properties and has no shadow occlusion: compatibility rendering therefore uses reduced point-light power, ambient color adjustment at night, and black emissive colors for disabled fixtures. It is an approximate preview; hardware lighting remains the preferred renderer.
+Real mode builds lights for the player's physical floor, capped at 16 active sources. All active Real sources are shadowed spot lights. SVGRenderer has no shadow occlusion or textured PBR rendering, so Real is unavailable in that renderer. The ordinary editor and Caminhar remain available, with fixture emission showing circuit power.
 
 
 ## Precise switch mounting
@@ -86,3 +86,16 @@ Real mode builds lights for the player's physical floor, capped at 16 active sou
 The editor's pick carries the actual mesh intersection and clicked wall side separately from its floor-plane point. `switchMountPosition` constrains local wall offset, base height, facing angle and depth to the wall face, using half the fixture depth plus a 2 mm clearance. It supports either face and rotated walls. Openings are checked in both horizontal and vertical bounds; colliding placements are rejected without seeking another unrelated position. A mesh hit remains available even when the view ray does not intersect the floor plane.
 
 Switch placement and its ghost share this helper. A mounted-switch drag intersects a vertical plane parallel to the wall, retaining the original pointer offset; plan view changes horizontal offset only. Gesture release commits one history entry, with optional Y. Numeric changes, face swapping and duplication preserve face mounting, and free rotation is disabled for mounted switches. Focusing uses the fixture's outward normal to show the correct face at close range. Moving a legacy displaced switch re-seats it on its wall without changing its circuit.
+
+
+## Realistic rendering (v0.5)
+
+`RealMaterials` upgrades the model's materials to MeshPhysicalMaterial. Color maps use sRGB; normal and roughness maps use linear data. Local 512 px JPEGs load once per surface into shared texture caches; materials are rebound as maps arrive. Until then, deterministic DataTextures are used. Object disposal removes live bindings without destroying shared maps. Engine disposal cancels late image attachment and disposes the library once. Geometry UVs project in metric units so the grain does not stretch with furniture dimensions. Hardware retains its own material; transparent glazing and emitters do not cast opaque shadows.
+
+Real geometry uses rounded boxes on furniture and denser cylinders. Wall/roof dimensions stay exact. `roomCeiling` checks at least three room borders against same-floor walls and excludes open terraces and stair landings. Generated ceilings and opening-aware baseboards are presentation-only meshes.
+
+`RealPipeline` composes the scene, GTAO contact shading, restrained bloom, ACES/color output and FXAA. Alta uses up to 1.5 pixel ratio; Leve uses up to 1 and disables GTAO/bloom. All lights cast shadows (up to 16 sources on the physical floor, nearest four at 1024 px in Alta, remaining at 512 px); sunlight uses 4096/2048 px maps. Walls and ceilings occlude those lights. Day/night procedural sky is cached as PMREM environment lighting. Alta captures a 128 px cubemap once per room/floor entry and after lighting/material changes for local reflections. These are approximate ambient reflections, not global illumination or path tracing.
+
+Exposure and quality are presentation state only. Changes reconfigure lighting without changing saved data or visitor coordinates. Composer, shadow targets, reflection targets and cached environments are disposed during teardown. If postprocessing or reflection allocation throws, direct materials/shadows remain and an explanatory notification appears.
+
+The UI blocks Real on the SVG path with an explicit WebGL requirement. Retry recreates only the viewport/engine, preserving the document, history and browser storage. Heavy rendering code remains dynamically imported by Viewport, and callback proxies use current React state.

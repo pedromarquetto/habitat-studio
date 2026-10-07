@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "resolution": 512,
+  "assets": {
+    "oak": {
+      "tileMeters": [
+        0.85,
+        1.8
+      ],
+      "source": "AI-generated architectural material atlas",
+      "maps": [
+        "albedo",
+        "normal",
+        "roughness"
+      ]
+    },
+    "limestone": {
+      "tileMeters": [
+        1.2,
+        1.2
+      ],
+      "source": "AI-generated architectural material atlas",
+      "maps": [
+        "albedo",
+        "normal",
+        "roughness"
+      ]
+    },
+    "linen": {
+      "tileMeters": [
+        0.22,
+        0.22
+      ],
+      "source": "AI-generated architectural material atlas",
+      "maps": [
+        "albedo",
+        "normal",
+        "roughness"
+      ]
+    },
+    "plaster": {
+      "tileMeters": [
+        0.65,
+        0.65
+      ],
+      "source": "AI-generated architectural material atlas",
+      "maps": [
+        "albedo",
+        "normal",
+        "roughness"
+      ]
+    }
+  }
+}

@@ -1,19 +1,23 @@
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as THREE from 'three';
 import { lightSettings, switchRoom, circuitRoom } from './lighting';
 import { wallSections, openingBase, type Entity } from './domain';
 
 export function material(color:string,roughness=.8) {return new THREE.MeshStandardMaterial({color,roughness,metalness:.02});}
-export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group {
+export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):THREE.Group {
   const group=new THREE.Group();group.userData.entityId=e.id;
   const mat=material(e.color);
   const dark=material('#46524e'),white=material('#f2efe7'),wood=material('#956e4e');
-  wood.userData.surface='wood';dark.userData.surface='paint';white.userData.surface=['bed','sofa','armchair'].includes(e.kind)?'fabric':'paint';
+  wood.userData.surface='wood';dark.userData.surface='metal';dark.userData.hardware=true;white.userData.surface=['bed','sofa','armchair'].includes(e.kind)?'fabric':'paint';
   const box=(x:number,y:number,z:number,w:number,h:number,d:number,m:THREE.Material=mat)=>{
     const surface=['room','terrain','lawn','paving'].includes(e.kind);
-    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,surface?Math.max(1,Math.ceil(w/2)):1,1,surface?Math.max(1,Math.ceil(d/2)):1),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
+    const architectural=['wall','room','roof','slab','terrain','lawn','paving','pool','stairs','pergola','fence','railing','closetPanel'].includes(e.kind);
+    const radius=Math.min(w,h,d)*(['sofa','armchair','bed'].includes(e.kind)?.16:.06);
+    const geometry=real&&!architectural?new RoundedBoxGeometry(w,h,d,Math.min(w,h,d)<.05?1:2,radius):new THREE.BoxGeometry(w,h,d,surface?Math.max(1,Math.ceil(w/2)):1,1,surface?Math.max(1,Math.ceil(d/2)):1);
+    const mesh=new THREE.Mesh(geometry,m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
   };
   const cylinder=(x:number,y:number,z:number,r:number,h:number,m:THREE.Material=mat)=>{
-    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,18),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
+    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,real?32:18),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
   };
   const legs=(top=.75)=>{for(const x of [-.39,.39])for(const z of [-.36,.36])box(x,top/2,z,.07,top,.07,wood);};
   switch(e.kind){
@@ -202,7 +206,7 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false):THREE.Group 
     const normalized=new THREE.Box3().setFromObject(group),offset=normalized.getCenter(new THREE.Vector3());offset.y=normalized.min.y;
     for(const child of group.children)child.position.sub(offset.clone().divide(group.scale));
   }
-  if(['lamp','ceilingLight'].includes(e.kind)){const room=circuitRoom({entities},e),own=lightSettings(e),circuit=room?lightSettings(room):null,on=own.on&&(circuit?.on??true);group.traverse(o=>{if(o instanceof THREE.Mesh&&(o.userData.lightEmitter||e.kind==='lamp'&&o.material===mat)){const m=o.material as THREE.MeshStandardMaterial;m.emissiveIntensity=on?.65*own.intensity*(circuit?.intensity??1):0;m.emissive.set(m.emissiveIntensity>0?(room?.light?.color??own.color):'#000000');}});}
+  if(['lamp','ceilingLight'].includes(e.kind)){const room=circuitRoom({entities},e),own=lightSettings(e),circuit=room?lightSettings(room):null,on=own.on&&(circuit?.on??true);group.traverse(o=>{if(o instanceof THREE.Mesh&&(o.userData.lightEmitter||e.kind==='lamp'&&o.material===mat)){o.userData.lightEmitter=true;const m=o.material as THREE.MeshStandardMaterial;m.emissiveIntensity=on?.65*own.intensity*(circuit?.intensity??1):0;m.emissive.set(m.emissiveIntensity>0?(room?.light?.color??own.color):'#000000');}});}
   // Child picking always resolves to the stable document entity.
   group.traverse(obj=>{obj.userData.entityId=e.id;});
   // Materials not used by a model are disposed immediately.
@@ -219,6 +223,6 @@ export function disposeObject(object:THREE.Object3D){
     }
   });
   const textures=new Set<THREE.Texture>();
-  for(const m of mats){for(const key of ['map','bumpMap','roughnessMap','normalMap','metalnessMap','emissiveMap'] as const){const texture=(m as THREE.MeshStandardMaterial)[key];if(texture instanceof THREE.Texture&&!texture.userData.sharedHabitatTexture)textures.add(texture);}m.dispose();}
+  for(const m of mats){for(const key of ['map','bumpMap','roughnessMap','normalMap','metalnessMap','emissiveMap','aoMap'] as const){const texture=(m as THREE.MeshStandardMaterial)[key];if(texture instanceof THREE.Texture&&!texture.userData.sharedHabitatTexture)textures.add(texture);}m.dispose();}
   for(const texture of textures)texture.dispose();
 }

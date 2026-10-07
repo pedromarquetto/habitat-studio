@@ -154,3 +154,13 @@ These checks used the SVG compatibility renderer because this test browser has W
 Browser verification used the SVG compatibility renderer. Clicking a visible exterior wall inserted a flush switch at the clicked location, with full-height walls enabled. Mover na parede showed the correct face at close range. Dragging changed X from 8.10 to 8.30 m and base height from 0.85 to 1.05 m, preserving Z=7.117 m. Undo/redo retained one movement entry. Numeric displacement set X=8.50 m; swapping the wall face changed Z to 6.883 m and rotation to 180°, and swapping back restored Z=7.117 m/0°. The existing three-floor project was preserved. GPU and physical touch rendering were not exercised.
 
 ![Mounted switch and precision controls](switch-mount.jpg)
+
+# v0.5 realistic rendering update
+
+44 regression tests pass. New coverage checks rounded furniture at exact imported outer dimensions without changing the document; separate sRGB/linear PBR maps, emissive fixtures and sunlight-transparent glazing; automatic ceilings for enclosed rooms with open terraces/landings preserved; baseboards that leave doorways clear; and all twelve packaged local JPEG assets. The original collision, stairs, rotation, switches, product import and persistence tests still pass. TypeScript passes; the production build is verified during publication.
+
+The supervised browser has WebGL disabled and opened the SVG renderer. Real now displays an explicit WebGL 2 requirement instead of labelling this simplified view as realistic. Retry recreates the viewport and safely returns to that dialog if WebGL is still unavailable. Continuing in the editor and entering ordinary Caminhar work; the two-floor 148-element starter, floor controls, sensitivity and saved state remain available. No project mutations were required by these UI checks.
+
+GPU textures, exposure/quality controls, AO, sky reflections, soft shadows and day/night interiors could not be visually verified in this browser. Their source integration and resource lifecycle were reviewed; hardware-accelerated visual QA and mobile/touch performance remain pending. The generated materials and rounded procedural geometry are an improvement in real-time rendering, not a claim of photographic reconstruction.
+
+![Explicit requirement when WebGL is unavailable](real-webgl-check.jpg)

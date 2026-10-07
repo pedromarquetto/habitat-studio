@@ -16,6 +16,10 @@ Implemented: apartment/open-terrace penthouse generation, stair shaft and railin
 
 Implemented: per-room power, intensity and color; all-room controls per floor; visible wall switches and ceiling fixtures; installation into existing projects; editable circuit assignment; click/E activation with distance and visibility checks; saved state and player-position preservation during lighting edits. Switches now use actual wall-face placement, wall-constrained horizontal/vertical dragging, precise offset/height controls, face swapping and close focus.
 
+## v0.5 — Realistic presentation
+
+Implemented: local textured physical materials, separate albedo/normal/roughness maps, furniture edge rounding, automatic interior ceilings and door-aware baseboards, shadowed room lights/sun, procedural sky, contact shadows and bloom, per-room reflection probes, Alta/Leve quality, exposure, and honest WebGL availability/retry controls. GPU visual validation remains pending in a hardware-accelerated browser.
+
 ## Next iteration
 
 - Improve product-specific visual detail and expand the modular woodwork catalog.

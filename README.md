@@ -1,6 +1,6 @@
 # Habitat Studio
 
-[Open the web app](https://habitat-studio.plcm90902.chatgpt.site)
+Live app: https://habitat-studio.plcm90902.chatgpt.site
 
 A web-based 3D building editor. Draw rooms and walls, furnish individual apartments, create multiple floors, and walk through your own building.
 
@@ -41,8 +41,8 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 - Structure catalog adds a flat roof slab, pergola and railing. Outdoor furniture and plants can be placed on the active upper floor.
 - Eight new appliances: microwave, washing machine, dryer, dishwasher, built-in oven, cooktop, range hood and air conditioner. **Marcenaria** contains eight items: cabinet, base cabinet, wall cabinet, drawer unit, bookshelf, wardrobe, slatted panel and countertop.
 - **Elevação** positions objects above their assigned floor, including wall cabinets, hoods and air conditioners. Color and finish can be edited separately; finish choices are automatic, wood, stone, fabric, metal and paint. All dimensions, elevations and finish choices survive JSON export/import.
-- **Real** enters first-person exploration of the same document with PBR surface maps, bump detail, reflections, shadows, day/night lighting and room lights. **Editar** returns to the editor without changing the project. Walking retains click-and-drag look, adjustable sensitivity, collision, stair access and floor shortcuts.
-- This is an initial real-time visualization using procedural geometry, not a photographic reconstruction. Enhanced surface maps, reflections and shadows require WebGL; the compatibility renderer shows a simplified view and a clear notice. No external asset services or API keys are required.
+- **Real** enters first-person exploration of the same document with PBR surface maps, normal detail, reflections, shadows, day/night lighting and room lights. **Editar** returns to the editor without changing the project. Walking retains click-and-drag look, adjustable sensitivity, collision, stair access and floor shortcuts.
+- This is an initial real-time visualization using procedural geometry, not a photographic reconstruction. The current Real renderer requires WebGL 2; without it, a clear dialog explains the requirement and the editor/Caminhar remain available. No external asset services or API keys are required.
 
 ![Penthouse and woodwork catalog](docs/penthouse-real.jpg)
 
@@ -53,7 +53,7 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 - New house/building starters and generated penthouses include ceiling lights and visible switches. Existing saved projects remain intact: choose **Luzes → Instalar luzes e interruptores** on each desired floor to add missing fixtures. Installing twice does not duplicate them.
 - During walking or Real mode, click a visible switch within 2.5 m, aim at it and press **E**, or use its on-screen action. Walls and furniture block activation. Dragging over a switch turns the camera without toggling it.
 - Room power gates all its assigned fixtures; individual fixture power remains independent. Light intensity, color and circuit assignments persist through autosave, undo/redo and JSON import/export. Switching lights preserves the player's position and viewing direction.
-- Real mode renders up to 16 active light sources on the player's current floor. WebGL provides the full lighting effects; SVG compatibility lighting is approximate and lacks occlusion and shadows.
+- Real mode renders up to 16 active light sources on the player's current floor. WebGL provides the full lighting effects. Real cannot start in the SVG compatibility renderer.
 
 ![Room light controls](docs/lighting-controls.jpg)
 ![Visible switch during exploration](docs/light-switch.jpg)
@@ -149,3 +149,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ROADMAP.md](docs/ROAD
 This is a first usable prototype, not a professional CAD/BIM system. Models use procedural low-poly geometry. Room walls do not automatically merge with neighboring rooms; walls and floor slabs are independent editable objects. The apartment field groups objects but does not enforce physical containment. Roofs use a simple gable profile with a fixed base at 2.95 m above their assigned floor. Stairs follow a continuous support ramp matching their visible steps, without gravity, jumping, or head collision. There is no structural engineering calculation, DXF/IFC import, photorealistic asset library, cloud account, shared project storage, or collaboration yet.
 
 Browser-local data can disappear if site data is cleared. JSON export is the portable backup format. Large buildings are bounded by 20 floors and 5,000 entities; the SVG compatibility renderer has less visual fidelity and lower performance than WebGL.
+
+## v0.5 — Realistic materials and lighting
+
+- **Real** uses local oak, limestone, linen and painted-plaster textures, with separate color, normal and roughness maps. Furniture has softened edges; fabrics have sheen, polished surfaces have clearcoat and metal reflects its surroundings. Color and finish remain editable.
+- Sunlight and room lamps cast shadows. Automatic ceilings cover enclosed rooms; baseboards respect door openings. These presentation details do not alter the saved geometry or measurements.
+- **Alta** adds contact shadows (GTAO), subtle bloom and room-based reflection captures. **Leve** keeps materials and direct shadows with a smaller rendering budget. Both use ACES tone mapping and antialiasing.
+- Switch between **Dia/Noite** and adjust **Exposição** without moving the visitor. The existing click-and-drag look, mouse sensitivity, switches and stairs remain available.
+- WebGL 2 is required. If unavailable, Real explains how to enable graphic acceleration and provides a retry; the editor and ordinary Caminhar still work in SVG.
+- This improves the real-time presentation of the existing procedural models. Manufacturer-specific GLB models and photographic asset scans are not yet included. Material provenance is in [MATERIALS.md](docs/MATERIALS.md).
+
