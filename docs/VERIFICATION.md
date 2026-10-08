@@ -1,5 +1,7 @@
 # v0.1 verification
 
+See the v0.7 section below for geographic context verification.
+
 ## Automated
 
 Eight domain regression tests pass: building generation and JSON round-trip; rotated wall/door collision; window barriers and opening overlap rejection; hosted openings after wall transformations/deletion; stair ascent/descent and prevention of upper-floor teleportation; floor duplication; malformed project rejection; and room bounds/spawn collision avoidance.
@@ -174,3 +176,13 @@ Browser verification used the SVG compatibility renderer with a 6 × 5 m room an
 Drawing the roof over the room in plan view produced bounds 6.58 × 5.58 m, base 3 m and ridge 4.8 m. With cutaway off it visibly rested on the walls. Editing one support wall to 3.3 m updated the roof base to 3.3 m; undo restored 3 m. Placing a ceiling fixture inside the room produced base 2.918 m/top 3 m, with the Sala circuit. Reloading preserved the Casa · encaixes project with all 13 objects. GPU rendering and physical touch were not exercised; the existing Real-mode WebGL requirement remains.
 
 ![Roof fitted to its supporting walls](roof-snap.jpg)
+
+# v0.7 free geographic context
+
+61 regression tests and TypeScript pass. Ten new geography tests cover backward-compatible location serialization and invalid input, coordinate/link parsing, metric projection and heading round trips, mapped heights and multipolygon holes, lot intersection suppression, elevation decoding/interpolation, level lot transitions and geographic walking/collision limits. No API key or new dependency is required.
+
+Browser checks used the supervised desktop SVG renderer. The map loaded visible OpenStreetMap tiles, accepted a complete OSM link, rejected latitude 95, and applied orientation and base elevation. Direct browser CORS requests loaded real neighborhood geometry and Mapterhorn elevation. The sample in Porto Alegre displayed 80 nearest buildings and 100 ways under the SVG budget, altitude 12 m and 79 estimated heights, with the reduced-detail notice and provider attribution. The overview visibly showed streets, park paths and neighboring volumes around the editable project. Walking buttons changed player coordinates while remaining on the ground. Reopening location retained the chosen settings; disabling the environment removed its scene and status panel and kept the saved location.
+
+The geographic context is derived from provider data and remains separate from editable objects. Terrain and missing building heights are approximate. GPU Real-mode visuals and physical mobile/touch were not verified in this browser; its existing WebGL requirement remains. Production packaging and deployment are performed by the publishing workflow.
+
+![Project placed in its real geographic context](real-location.jpg)

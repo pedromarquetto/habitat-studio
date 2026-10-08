@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LocationSchema } from './geography.ts';
 
 export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object', 'slab', 'pergola', 'railing', 'microwave', 'washingMachine', 'dryer', 'dishwasher', 'oven', 'cooktop', 'hood', 'airConditioner', 'baseCabinet', 'wallCabinet', 'drawerUnit', 'bookshelf', 'wardrobe', 'closetPanel', 'countertop', 'lightSwitch', 'ceilingLight', 'plantSmall', 'succulent', 'flowerPot'] as const;
 export type Kind = typeof KINDS[number];
@@ -31,6 +32,7 @@ export type Floor = z.infer<typeof FloorSchema>;
 export const ProjectSchema = z.object({
   version: z.literal(1), name: z.string().min(1).max(120), units: z.literal('m'),
   projectType: z.enum(['house','building','terrain']).optional(),
+  location: LocationSchema.optional(),
   floors: z.array(FloorSchema).min(1).max(20), entities: z.array(EntitySchema).max(5000),
 }).superRefine((p, ctx) => {
   const floors = new Set(p.floors.map(f => f.id));
@@ -203,8 +205,8 @@ export function collides(project:Project,x:number,z:number,feet:number):boolean 
     return inside(e,x,z,PLAYER_RADIUS*.7);
   });
 }
-export function supportHeight(project:Project,x:number,z:number,previous:number):number {
-  let support=0;
+export function supportHeight(project:Project,x:number,z:number,previous:number,ground=0):number {
+  let support=ground;
   for(const e of project.entities){
     const floor=project.floors.find(f=>f.id===e.floorId)!;
     if(!inside(e,x,z,.002))continue;
@@ -216,15 +218,15 @@ export function supportHeight(project:Project,x:number,z:number,previous:number)
   }
   return support;
 }
-export function movePlayer(project:Project,position:{x:number;z:number;feet:number},dx:number,dz:number){
+export function movePlayer(project:Project,position:{x:number;z:number;feet:number},dx:number,dz:number,environment?:{surface:(x:number,z:number)=>number;blocked:(x:number,z:number,feet:number)=>boolean}){
   let {x,z,feet}=position;
   const parts=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.08));
   for(let i=0;i<parts;i++){
     const nx=x+dx/parts, nz=z+dz/parts;
-    let height=supportHeight(project,nx,z,feet);
-    if(height>=feet-.5&&!collides(project,nx,z,height)){x=nx;feet=height;}
-    height=supportHeight(project,x,nz,feet);
-    if(height>=feet-.5&&!collides(project,x,nz,height)){z=nz;feet=height;}
+    let height=supportHeight(project,nx,z,feet,environment?.surface(nx,z)??0);
+    if(height>=feet-.5&&height<=feet+.24&&!collides(project,nx,z,height)&&!environment?.blocked(nx,z,height)){x=nx;feet=height;}
+    height=supportHeight(project,x,nz,feet,environment?.surface(x,nz)??0);
+    if(height>=feet-.5&&height<=feet+.24&&!collides(project,x,nz,height)&&!environment?.blocked(x,nz,height)){z=nz;feet=height;}
   }
   return {x,z,feet};
 }

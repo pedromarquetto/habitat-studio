@@ -24,8 +24,13 @@ Implemented: local textured physical materials, separate albedo/normal/roughness
 
 Implemented: wall-mounted appliances/woodwork, furniture-surface support with small plants, wall-derived ceiling heights, fitted rectangular pitched roofs, support propagation/remapping, existing-object suggestions, corrected door pivots and full-height cutaway references.
 
+## v0.7 — Free geographic context
+
+Implemented: keyless OSM map selection, geographic project anchor/orientation, lot leveling and base offset, real neighborhood footprints/roads/green/water context, Mapterhorn approximate relief, exterior walking support/collision, provider failure/retry states, compatibility budgets, attribution and persisted location settings.
+
 ## Next iteration
 
+- Higher-detail geographic assets and terrain where openly licensed data exists; exact site boundaries, geospatial export and more precise terrain placement.
 - Improve product-specific visual detail and expand the modular woodwork catalog.
 - Wall endpoints, dimensions, snapping to other geometry and shared-wall merging.
 - Room containment and apartment grouping with batch edits.

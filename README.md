@@ -21,6 +21,22 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 - A compact walking-mode mouse sensitivity slider (25–200%), remembered in the current browser.
 - Automatic lightweight SVG compatibility rendering when WebGL is unavailable. WebGL is the preferred renderer.
 
+## v0.7 — Construir em uma localização real, sem chave
+
+- **Local real** abre um mapa gratuito. Clique para escolher o centro, arraste para navegar, use os botões de zoom ou cole coordenadas/um link completo de Google Maps ou OpenStreetMap. Links curtos precisam ser abertos para copiar as coordenadas. Não há cadastro, chave de API ou cobrança integrada.
+- Ajuste largura/profundidade do lote, orientação em graus a partir do norte e base acima do relevo. O centro local `(0, 0)` do desenho corresponde ao pino. A área do lote é nivelada para apoiar o projeto e os prédios mapeados que a cruzam ficam ocultos somente na simulação.
+- O editor carrega ruas, caminhos, parques, água e volumes de prédios do OpenStreetMap via Overpass. **Ver entorno** amplia a câmera; **Enquadrar projeto** retorna à construção. Os vizinhos são contexto, não objetos editáveis.
+- Relevo aberto do Mapterhorn, decodificado de Terrarium RGB, acompanha a malha do terreno e a caminhada. É aproximado: no Brasil, a resolução de origem é geralmente cerca de 30 m, sem precisão para projeto executivo ou delimitação legal de lotes.
+- O mesmo entorno aparece em **3D**, **Planta**, **Caminhar** e no **Real** com WebGL. A caminhada respeita os volumes vizinhos e o limite da área. Sem WebGL, a visualização leve reduz o entorno para 80 prédios e 100 vias e informa essa redução.
+- Localização, orientação, lote, elevação da base e visibilidade sobrevivem ao autosave, JSON e desfazer/refazer. O entorno precisa de internet para ser recarregado; uma falha mantém a construção e oferece nova tentativa ou terreno plano. Não há imagens de satélite, Street View ou fachadas fotográficas nesta versão.
+- Alturas ausentes são estimadas a partir dos andares cadastrados ou de um valor padrão e sinalizadas no painel. Dados não mapeados não são inventados. As coordenadas escolhidas são enviadas aos provedores para carregar a região; não usamos a localização automática do dispositivo.
+
+![Projeto e entorno geográfico gratuito](docs/real-location.jpg)
+
+### Fontes gratuitas
+
+Mapa e geometria: [OpenStreetMap](https://www.openstreetmap.org/copyright), sob ODbL, consultados pelo [Overpass](https://wiki.openstreetmap.org/wiki/Overpass_API). O mapa 2D usa apenas os tiles visíveis, com cache normal do navegador, referência do site e atribuição, conforme a [política de tiles](https://operations.osmfoundation.org/policies/tiles/); não há prefetch, download em massa ou função offline. Relevo: [Mapterhorn](https://mapterhorn.com/data-access/), com [atribuição das fontes](https://mapterhorn.com/attribution/). Os serviços públicos têm disponibilidade variável. Não usamos o serviço público de busca Nominatim; a seleção é por mapa/coordenadas.
+
 ## v0.6 — Encaixe sugerido e alturas reais
 
 - **Telhado**: desenhe dois cantos sobre as paredes. A prévia ajusta a base à parede mais alta, calcula os limites com beiral de 20 cm e guarda o vínculo para acompanhar mudanças nas paredes. Telhados antigos sem elevação explícita usam a altura real das paredes ao renderizar; selecione **Aplicar encaixe** para guardar e corrigir também seus limites. O telhado atual usa um retângulo envolvente e duas águas; coberturas com recortes complexos ainda precisam de evolução.

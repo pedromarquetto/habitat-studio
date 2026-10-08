@@ -15,7 +15,7 @@ export default function Viewport({state,callbacks,onEngine}:{state:EngineState;c
       if(cancelled||!container.current)return;
       try{
         const instance=new HabitatEngine(container.current,{
-          onPlacementHint:s=>latest.current.callbacks.onPlacementHint?.(s),onRealStatus:s=>latest.current.callbacks.onRealStatus?.(s),onToggleLight:id=>latest.current.callbacks.onToggleLight(id),onSwitchTarget:target=>latest.current.callbacks.onSwitchTarget(target),onPick:p=>latest.current.callbacks.onPick(p),onHover:p=>latest.current.callbacks.onHover(p),
+          onContextStatus:s=>latest.current.callbacks.onContextStatus?.(s),onPlacementHint:s=>latest.current.callbacks.onPlacementHint?.(s),onRealStatus:s=>latest.current.callbacks.onRealStatus?.(s),onToggleLight:id=>latest.current.callbacks.onToggleLight(id),onSwitchTarget:target=>latest.current.callbacks.onSwitchTarget(target),onPick:p=>latest.current.callbacks.onPick(p),onHover:p=>latest.current.callbacks.onHover(p),
           onLook:v=>latest.current.callbacks.onLook(v),onError:m=>latest.current.callbacks.onError(m),onPosition:p=>latest.current.callbacks.onPosition(p),
           onDragState:s=>latest.current.callbacks.onDragState(s),onMove:(id,p)=>latest.current.callbacks.onMove(id,p),onRotate:(id,r)=>latest.current.callbacks.onRotate(id,r),
         });
