@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object', 'slab', 'pergola', 'railing', 'microwave', 'washingMachine', 'dryer', 'dishwasher', 'oven', 'cooktop', 'hood', 'airConditioner', 'baseCabinet', 'wallCabinet', 'drawerUnit', 'bookshelf', 'wardrobe', 'closetPanel', 'countertop', 'lightSwitch', 'ceilingLight'] as const;
+export const KINDS = ['wall', 'room', 'door', 'window', 'roof', 'stairs', 'sofa', 'armchair', 'bed', 'table', 'chair', 'cabinet', 'fridge', 'stove', 'sink', 'toilet', 'plant', 'lamp', 'terrain', 'lawn', 'paving', 'fence', 'gate', 'pool', 'tree', 'object', 'slab', 'pergola', 'railing', 'microwave', 'washingMachine', 'dryer', 'dishwasher', 'oven', 'cooktop', 'hood', 'airConditioner', 'baseCabinet', 'wallCabinet', 'drawerUnit', 'bookshelf', 'wardrobe', 'closetPanel', 'countertop', 'lightSwitch', 'ceilingLight', 'plantSmall', 'succulent', 'flowerPot'] as const;
 export type Kind = typeof KINDS[number];
 export type View = '3d' | 'plan' | 'walk';
 export type Tool = 'select' | 'move' | 'wall' | 'room' | 'roof' | 'place' | 'area' | 'line';
@@ -19,6 +19,9 @@ export const EntitySchema = z.object({
   finish: z.enum(['auto','wood','stone','fabric','metal','paint']).optional(),
   w: z.number().finite().min(0.05).max(100), h: z.number().finite().min(0.05).max(30), d: z.number().finite().min(0.05).max(100),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/), apartment: z.string().max(80), hostId: z.string().max(100).optional(),
+  wallMountId:z.string().max(100).optional(), supportId:z.string().max(100).optional(), supportRatio:z.number().finite().min(0).max(1).optional(),
+  ceilingRoomId:z.string().max(100).optional(), roofWallIds:z.array(z.string().max(100)).min(1).max(5000).optional(),
+  roofOverhang:z.number().finite().min(0).max(2).optional(), doorSide:z.union([z.literal(1),z.literal(-1)]).optional(), doorHinge:z.enum(['left','right']).optional(),
   product: ProductSourceSchema.optional(),
   light:LightSchema.optional(), roomId:z.string().max(100).optional(), switchWallId:z.string().max(100).optional(),
 });
@@ -38,6 +41,19 @@ export const ProjectSchema = z.object({
     if (!floors.has(e.floorId)) ctx.addIssue({code:'custom',message:'Objeto com andar inexistente.'});
     if(e.roomId){const room=p.entities.find(r=>r.id===e.roomId&&r.kind==='room'&&r.floorId===e.floorId);if(!room||!['lightSwitch','lamp','ceilingLight'].includes(e.kind))ctx.addIssue({code:'custom',message:'Circuito com cômodo inválido.'});}
     if(e.switchWallId&&!p.entities.some(w=>w.id===e.switchWallId&&w.kind==='wall'&&w.floorId===e.floorId)||e.switchWallId&&e.kind!=='lightSwitch')ctx.addIssue({code:'custom',message:'Interruptor com parede inválida.'});
+    if(e.wallMountId){
+      const wall=p.entities.find(w=>w.id===e.wallMountId&&w.kind==='wall'&&w.floorId===e.floorId);
+      if(!wall||!WALL_MOUNT_KINDS.includes(e.kind))ctx.addIssue({code:'custom',message:'Objeto com parede de apoio inválida.'});
+      else{const local=localPoint(wall,e.x,e.z);if(Math.abs(Math.abs(local.z)-(wall.d/2+e.d/2+.002))>.004||Math.abs(local.x)+e.w/2>wall.w/2+.001||(e.y??0)<(wall.y??0)||(e.y??0)+e.h>(wall.y??0)+wall.h+.001||Math.abs(Math.sin((e.rotation-wall.rotation)*Math.PI/180))>.01)ctx.addIssue({code:'custom',message:'Objeto fora da face ou da altura da parede.'});}
+    }
+    if(e.supportId){
+      const support=p.entities.find(o=>o.id===e.supportId&&o.floorId===e.floorId);
+      if(!support||!SUPPORT_KINDS.includes(support.kind)||support.id===e.id)ctx.addIssue({code:'custom',message:'Superfície de apoio inválida.'});
+      else{const local=localPoint(support,e.x,e.z),a=(e.rotation-support.rotation)*Math.PI/180,hx=(Math.abs(Math.cos(a))*e.w+Math.abs(Math.sin(a))*e.d)/2,hz=(Math.abs(Math.sin(a))*e.w+Math.abs(Math.cos(a))*e.d)/2;if(Math.abs(local.x)+hx>support.w/2+.004||Math.abs(local.z)+hz>support.d/2+.004||Math.abs((e.y??0)-((support.y??0)+support.h*(e.supportRatio??1)+.002))>.004)ctx.addIssue({code:'custom',message:'Objeto fora da superfície de apoio.'});}
+      const seen=new Set([e.id]);let cursor=e;while(cursor.supportId){if(seen.has(cursor.supportId)){ctx.addIssue({code:'custom',message:'Apoios circulares não são permitidos.'});break;}seen.add(cursor.supportId);const parent=p.entities.find(o=>o.id===cursor.supportId);if(!parent)break;cursor=parent;}
+    }
+    if(e.ceilingRoomId&&(!p.entities.some(r=>r.id===e.ceilingRoomId&&r.kind==='room'&&r.floorId===e.floorId)||e.kind!=='ceilingLight'))ctx.addIssue({code:'custom',message:'Luminária com teto inválido.'});
+    if(e.roofWallIds&&(e.kind!=='roof'||new Set(e.roofWallIds).size!==e.roofWallIds.length||e.roofWallIds.some(id=>!p.entities.some(w=>w.id===id&&w.kind==='wall'&&w.floorId===e.floorId))))ctx.addIssue({code:'custom',message:'Telhado com paredes de apoio inválidas.'});
     if (e.kind === 'door' || e.kind === 'window') {
       const host = p.entities.find(w => w.id === e.hostId && w.kind === 'wall');
       if (!host || host.floorId !== e.floorId) ctx.addIssue({code:'custom',message:'Porta ou janela sem parede válida.'});
@@ -65,6 +81,9 @@ export const CATALOG: CatalogItem[] = [
   {kind:'table',name:'Mesa',section:'furniture',w:1.8,h:.78,d:.9,color:'#ad8059',hint:'Mesa de jantar'},
   {kind:'chair',name:'Cadeira',section:'furniture',w:.48,h:.95,d:.5,color:'#6a7b70',hint:'Madeira e tecido'},
   {kind:'cabinet',name:'Armário',section:'woodwork',w:1.8,h:2.1,d:.6,color:'#b39473',hint:'Duas portas'},
+  {kind:'plantSmall',name:'Planta de mesa',section:'furniture',w:.24,h:.38,d:.24,color:'#55845c',hint:'Clique no tampo de um móvel ou no piso'},
+  {kind:'succulent',name:'Suculenta',section:'furniture',w:.16,h:.18,d:.16,color:'#739369',hint:'Vaso pequeno para mesas e prateleiras'},
+  {kind:'flowerPot',name:'Vaso com flores',section:'furniture',w:.22,h:.36,d:.22,color:'#709061',hint:'Flores em vaso para colocar sobre móveis'},
   {kind:'plant',name:'Planta',section:'furniture',w:.65,h:1.2,d:.65,color:'#59855d',hint:'Vaso decorativo'},
   {kind:'lamp',name:'Luminária',section:'furniture',w:.45,h:1.7,d:.45,color:'#debd7d',hint:'Luminária de piso'},
   {kind:'fridge',name:'Geladeira',section:'appliances',w:.75,h:1.85,d:.75,color:'#ccd4d5',hint:'Duas portas'},
@@ -89,15 +108,15 @@ export const CATALOG: CatalogItem[] = [
   {kind:'oven',name:'Forno embutido',section:'appliances',w:.6,h:.6,d:.56,color:'#414949',hint:'Ajuste a elevação no painel',y:.65},
   {kind:'cooktop',name:'Cooktop',section:'appliances',w:.6,h:.06,d:.52,color:'#263434',hint:'Sobre a bancada',y:.91},
   {kind:'hood',name:'Coifa',section:'appliances',w:.9,h:.6,d:.5,color:'#bdc6c9',hint:'Acima do fogão',y:1.6},
-  {kind:'airConditioner',name:'Ar-condicionado',section:'appliances',w:.9,h:.3,d:.22,color:'#f0f2ed',hint:'Ajuste a posição na parede',y:2.1},
+  {kind:'airConditioner',name:'Ar-condicionado',section:'appliances',w:.9,h:.3,d:.22,color:'#f0f2ed',hint:'Clique na parede para encaixar',y:2.1},
   {kind:'baseCabinet',name:'Balcão inferior',section:'woodwork',w:1.2,h:.88,d:.6,color:'#ba9774',hint:'Módulo com duas portas'},
-  {kind:'wallCabinet',name:'Armário aéreo',section:'woodwork',w:1.2,h:.7,d:.35,color:'#ddc5a4',hint:'Instalado acima da bancada',y:1.5},
+  {kind:'wallCabinet',name:'Armário aéreo',section:'woodwork',w:1.2,h:.7,d:.35,color:'#ddc5a4',hint:'Clique na parede acima da bancada',y:1.5},
   {kind:'drawerUnit',name:'Gaveteiro',section:'woodwork',w:.6,h:.85,d:.55,color:'#a98868',hint:'Quatro gavetas'},
   {kind:'bookshelf',name:'Estante',section:'woodwork',w:1.2,h:1.9,d:.35,color:'#a98b67',hint:'Prateleiras abertas'},
   {kind:'wardrobe',name:'Guarda-roupa',section:'woodwork',w:2.4,h:2.3,d:.65,color:'#b89c7f',hint:'Três portas de correr'},
   {kind:'closetPanel',name:'Painel ripado',section:'woodwork',w:2,h:2.5,d:.08,color:'#aa825a',hint:'Painel de marcenaria'},
   {kind:'lightSwitch',name:'Interruptor',section:'structure',w:.09,h:.13,d:.05,color:'#f6f5ee',hint:'Clique na face livre da parede e vincule ao cômodo',y:1.1},
-  {kind:'ceilingLight',name:'Plafon',section:'furniture',w:.35,h:.08,d:.35,color:'#f3f1e5',hint:'Luminária de teto vinculada ao cômodo',y:2.7},
+  {kind:'ceilingLight',name:'Plafon',section:'furniture',w:.35,h:.08,d:.35,color:'#f3f1e5',hint:'Clique no cômodo para encaixar no teto',y:2.7},
   {kind:'countertop',name:'Bancada',section:'woodwork',w:2,h:.05,d:.65,color:'#d4d2c8',hint:'Tampo sobre os módulos',y:.9},
 ];
 export const AREA_KINDS:Kind[]=['terrain','lawn','paving','pool','slab','pergola'];
@@ -125,6 +144,8 @@ export function worldPoint(e:Entity,x:number,z:number) {
   return {x:e.x+x*Math.cos(a)+z*Math.sin(a),z:e.z-x*Math.sin(a)+z*Math.cos(a)};
 }
 export function inside(e:Entity,x:number,z:number,pad=0) { const p=localPoint(e,x,z); return Math.abs(p.x)<e.w/2+pad && Math.abs(p.z)<e.d/2+pad; }
+export const WALL_MOUNT_KINDS:Kind[]=['airConditioner','wallCabinet','hood','closetPanel'];
+export const SUPPORT_KINDS:Kind[]=['table','cabinet','baseCabinet','wallCabinet','drawerUnit','bookshelf','wardrobe','countertop','sink','fridge','microwave','object'];
 export const openingBase = (e:Pick<Entity,'kind'>) => e.kind==='window' ? .9 : 0;
 export function wallFromPoints(floorId:string,a:{x:number;z:number},b:{x:number;z:number},apartment=''):Entity|null {
   const w=Math.hypot(b.x-a.x,b.z-a.z);
@@ -138,15 +159,15 @@ export function roomFromPoints(floorId:string,a:{x:number;z:number},b:{x:number;
     entity('wall',floorId,x,z-d/2,{w,apartment}),entity('wall',floorId,x,z+d/2,{w,apartment}),
     entity('wall',floorId,x-w/2,z,{w:d,rotation:90,apartment}),entity('wall',floorId,x+w/2,z,{w:d,rotation:90,apartment})];
 }
-export function attachOpening(project:Project,kind:'door'|'window',wallId:string,point:{x:number;z:number}):Entity|null {
+export function attachOpening(project:Project,kind:'door'|'window',wallId:string,point:{x:number;z:number},options:{snapping?:boolean;side?:number}={}):Entity|null {
   const host=project.entities.find(e=>e.id===wallId&&e.kind==='wall');
   if(!host)return null;
   const item=catalogFor(kind), max=host.w/2-item.w/2-.08;
   if(max<0 || openingBase(item)+item.h>host.h)return null;
-  const x=Math.max(-max,Math.min(max,snap(localPoint(host,point.x,point.z).x)));
+  const x=Math.max(-max,Math.min(max,snap(localPoint(host,point.x,point.z).x,options.snapping??true)));
   if(project.entities.some(e=>e.hostId===host.id&&Math.abs(localPoint(host,e.x,e.z).x-x)<(e.w+item.w)/2+.08))return null;
   const pos=worldPoint(host,x,0);
-  return entity(kind,host.floorId,pos.x,pos.z,{hostId:host.id,rotation:host.rotation,d:host.d,apartment:host.apartment});
+  return entity(kind,host.floorId,pos.x,pos.z,{hostId:host.id,rotation:host.rotation,d:host.d,apartment:host.apartment,...(kind==='door'?{doorSide:(Math.sign(options.side??localPoint(host,point.x,point.z).z)||1) as 1|-1}: {})});
 }
 
 export interface WallSection {x:number;y:number;w:number;h:number}
@@ -175,7 +196,7 @@ export function collides(project:Project,x:number,z:number,feet:number):boolean 
       if(Math.abs(p.z)>e.d/2+PLAYER_RADIUS||Math.abs(p.x)>e.w/2+PLAYER_RADIUS)return false;
       return !project.entities.some(o=>o.kind==='door'&&o.hostId===e.id&&Math.abs(p.x-localPoint(e,o.x,o.z).x)<o.w/2-PLAYER_RADIUS&&feet+1.65<floor.elevation+o.h);
     }
-    if(['room','door','window','roof','slab','stairs','plant','lamp','lightSwitch','ceilingLight','terrain','lawn','paving'].includes(e.kind))return false;
+    if(['room','door','window','roof','slab','stairs','plant','plantSmall','succulent','flowerPot','lamp','lightSwitch','ceilingLight','terrain','lawn','paving'].includes(e.kind))return false;
     if(e.kind==='pergola'){const p=localPoint(e,x,z);return Math.abs(p.x)>e.w/2-.13-PLAYER_RADIUS&&Math.abs(p.x)<e.w/2+PLAYER_RADIUS&&Math.abs(p.z)>e.d/2-.13-PLAYER_RADIUS&&Math.abs(p.z)<e.d/2+PLAYER_RADIUS;}
     if(e.kind==='gate') { const p=localPoint(e,x,z); return Math.abs(p.z)<e.d/2+PLAYER_RADIUS && Math.abs(p.x)>e.w/2-.12-PLAYER_RADIUS && Math.abs(p.x)<e.w/2+PLAYER_RADIUS; }
     if(e.kind==='tree')return Math.hypot(x-e.x,z-e.z)<Math.min(e.w,e.d)*.08+PLAYER_RADIUS;
@@ -294,17 +315,47 @@ export function duplicateFloor(project:Project,sourceId:string):{project:Project
   const floor:Floor={id:uid(),name:`${project.floors.length}º andar`,elevation};
   const source=project.entities.filter(e=>e.floorId===sourceId&&e.kind!=='roof'&&catalogFor(e.kind).section!=='outdoor');
   const remap=new Map(source.map(e=>[e.id,uid()]));
-  const copies=source.map(e=>({...e,id:remap.get(e.id)!,floorId:floor.id,hostId:e.hostId?remap.get(e.hostId):undefined,roomId:e.roomId?remap.get(e.roomId):undefined,switchWallId:e.switchWallId?remap.get(e.switchWallId):undefined,apartment:e.apartment?e.apartment.replace(/\d+/,m=>String((project.floors.length+1)*100+(Number(m)%100))):''}));
-  return{project:{...project,floors:[...project.floors,floor],entities:[...project.entities.filter(e=>e.kind!=='roof'),...copies,...project.entities.filter(e=>e.kind==='roof').map(e=>({...e,floorId:floor.id}))]},floorId:floor.id};
+  const copies=source.map(e=>({...e,id:remap.get(e.id)!,floorId:floor.id,hostId:e.hostId?remap.get(e.hostId):undefined,roomId:e.roomId?remap.get(e.roomId):undefined,switchWallId:e.switchWallId?remap.get(e.switchWallId):undefined,wallMountId:e.wallMountId?remap.get(e.wallMountId):undefined,supportId:e.supportId?remap.get(e.supportId):undefined,ceilingRoomId:e.ceilingRoomId?remap.get(e.ceilingRoomId):undefined,roofWallIds:e.roofWallIds?.map(id=>remap.get(id)!).filter(Boolean),apartment:e.apartment?e.apartment.replace(/\d+/,m=>String((project.floors.length+1)*100+(Number(m)%100))):''}));
+  return{project:{...project,floors:[...project.floors,floor],entities:[...project.entities.filter(e=>e.kind!=='roof'),...copies,...project.entities.filter(e=>e.kind==='roof').map(e=>({...e,floorId:floor.id,roofWallIds:e.roofWallIds?.map(id=>remap.get(id)!).filter(Boolean).length?e.roofWallIds.map(id=>remap.get(id)!).filter(Boolean):undefined}))]},floorId:floor.id};
+}
+/** Ceiling underside follows the enclosing walls, rather than a fixed furniture elevation. */
+export function ceilingHeight(entities:Entity[],room:Entity):number|null{
+  const points=[[-room.w/2,0],[room.w/2,0],[0,-room.d/2],[0,room.d/2]].map(([x,z])=>worldPoint(room,x,z));
+  const walls=points.map(point=>entities.find(w=>w.kind==='wall'&&w.floorId===room.floorId&&Math.abs(localPoint(w,point.x,point.z).z)<=w.d/2+.2&&Math.abs(localPoint(w,point.x,point.z).x)<=w.w/2+.2)).filter((w):w is Entity=>Boolean(w));
+  return walls.length>=3?Math.min(...walls.map(w=>(w.y??0)+w.h)):null;
+}
+export function fitRoof(project:Pick<Project,'entities'>,roof:Entity,align=true):Entity|null{
+  const walls=project.entities.filter(w=>w.kind==='wall'&&w.floorId===roof.floorId&&(roof.roofWallIds?roof.roofWallIds.includes(w.id):inside(roof,w.x,w.z,.3)));
+  if(!walls.length)return null;
+  const points=walls.flatMap(w=>[-1,1].flatMap(x=>[-1,1].map(z=>worldPoint(w,x*w.w/2,z*w.d/2))));
+  const minX=Math.min(...points.map(p=>p.x)),maxX=Math.max(...points.map(p=>p.x)),minZ=Math.min(...points.map(p=>p.z)),maxZ=Math.max(...points.map(p=>p.z)),overhang=roof.roofOverhang??.2;
+  return {...roof,...(align?{x:(minX+maxX)/2,z:(minZ+maxZ)/2,w:Math.max(.05,maxX-minX+overhang*2),d:Math.max(.05,maxZ-minZ+overhang*2),rotation:0}:{}),y:Math.max(...walls.map(w=>(w.y??0)+w.h)),roofWallIds:walls.map(w=>w.id),roofOverhang:overhang};
 }
 export function updateEntity(project:Project,id:string,patch:Partial<Entity>):Project {
   const old=project.entities.find(e=>e.id===id);if(!old)return project;
-  const updated={...old,...patch};
-  return {...project,entities:project.entities.map(e=>{
-    if(e.id===id)return updated;
-    if(old.kind==='wall'&&e.switchWallId===id){const local=localPoint(old,e.x,e.z),side=Math.sign(local.z)||1,pos=worldPoint(updated,local.x,side*(updated.d/2+e.d/2+.002));return {...e,...pos,rotation:updated.rotation+(side<0?180:0),floorId:updated.floorId};}
-    if(old.kind==='wall'&&e.hostId===id){const local=localPoint(old,e.x,e.z),pos=worldPoint(updated,local.x,0);return {...e,...pos,rotation:updated.rotation,floorId:updated.floorId,d:updated.d};}
+  const updated={...old,...patch};const changed=new Map<string,Entity>([[id,updated]]);let entities=project.entities.map(e=>e.id===id?updated:e);
+  // Propagate through furniture stacks as well as a wall's immediate fixtures.
+  for(let pass=0;pass<project.entities.length;pass++){
+    let progressed=false;
+    entities=entities.map(e=>{
+      if(changed.has(e.id))return e;
+      const parentId=e.wallMountId??e.switchWallId??e.hostId??e.supportId??e.ceilingRoomId;if(!parentId||!changed.has(parentId))return e;
+      const previous=project.entities.find(o=>o.id===parentId)!,parent=changed.get(parentId)!,local=localPoint(previous,e.x,e.z);let next:Entity;
+      if(e.wallMountId||e.switchWallId){const side=Math.sign(local.z)||1,pos=worldPoint(parent,local.x,side*(parent.d/2+e.d/2+.002));next={...e,...pos,y:(e.y??0)+(parent.y??0)-(previous.y??0),rotation:parent.rotation+(side<0?180:0),floorId:parent.floorId};}
+      else if(e.hostId){next={...e,...worldPoint(parent,local.x,0),rotation:parent.rotation,floorId:parent.floorId,d:parent.d};}
+      else{const pos=worldPoint(parent,local.x,local.z);next={...e,...pos,rotation:e.rotation+parent.rotation-previous.rotation,floorId:parent.floorId,...(e.supportId?{y:(parent.y??0)+parent.h*(e.supportRatio??1)+.002}:{})};}
+      changed.set(e.id,next);progressed=true;return next;
+    });if(!progressed)break;
+  }
+  entities=entities.map(e=>{
+    if(e.kind==='roof'&&e.roofWallIds&&e.roofWallIds.some(w=>changed.has(w)))return fitRoof({entities},e)??e;
+    if(e.ceilingRoomId){const room=entities.find(r=>r.id===e.ceilingRoomId)!;const height=ceilingHeight(entities,room);if(height!==null)return {...e,y:Math.max(0,height-e.h-.002)};}
     return e;
-  })};
+  });return {...project,entities};
 }
-export function removeEntity(project:Project,id:string):Project {return {...project,entities:project.entities.filter(e=>e.id!==id&&e.hostId!==id&&e.switchWallId!==id&&e.roomId!==id)};}
+export function removeEntity(project:Project,id:string):Project {
+  const removed=new Set([id]);let previous=0;
+  while(previous!==removed.size){previous=removed.size;for(const e of project.entities)if([e.hostId,e.switchWallId,e.wallMountId,e.supportId,e.ceilingRoomId,e.roomId].some(ref=>ref&&removed.has(ref))||e.roofWallIds?.every(ref=>removed.has(ref)))removed.add(e.id);}
+  const entities=project.entities.filter(e=>!removed.has(e.id)).map(e=>e.roofWallIds?{...e,roofWallIds:e.roofWallIds.filter(ref=>!removed.has(ref))}:e);
+  return {...project,entities:entities.map(e=>e.roofWallIds?fitRoof({entities},e)??e:e)};
+}

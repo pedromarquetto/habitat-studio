@@ -1,5 +1,6 @@
 import { switchMountPosition, type MovePoint } from './switch-mount';
 import { localPoint, snap, worldPoint, type Project } from './domain';
+import { wallMountPosition, supportPosition } from './placement';
 
 export const MOVE_HOLD_MS = 450;
 export const MOVE_SLOP_PX = 7;
@@ -33,6 +34,7 @@ export class MoveGesture {
 /** Hosted openings slide along their wall without crossing another opening. */
 export function entityMovePosition(project:Project,id:string,point:MovePoint,snapping:boolean):MovePoint|null {
   const item=project.entities.find(e=>e.id===id);
+  if(item?.roofWallIds)return null;
   if(!item || !Number.isFinite(point.x) || !Number.isFinite(point.z))return null;
   if(item.kind==='lightSwitch'&&item.switchWallId){
     const wall=project.entities.find(e=>e.id===item.switchWallId);if(!wall)return null;
@@ -40,6 +42,13 @@ export function entityMovePosition(project:Project,id:string,point:MovePoint,sna
     const mount=switchMountPosition(project,wall.id,{...point,y:(point.y??item.y??1.1)+item.h/2},{item,side,snapping,ignoreId:item.id});
     return mount?{x:mount.x,z:mount.z,y:mount.y}:null;
   }
+  if(item.wallMountId){
+    const wall=project.entities.find(e=>e.id===item.wallMountId);if(!wall)return null;
+    const mount=wallMountPosition(project,wall.id,item,{...point,y:(point.y??item.y??0)+item.h/2},{side:Math.sign(localPoint(wall,item.x,item.z).z)||1,snapping,ignoreId:item.id});
+    return mount?{x:mount.x,z:mount.z,y:mount.y}:null;
+  }
+  if(item.supportId){const support=project.entities.find(e=>e.id===item.supportId);if(!support)return null;const mounted=supportPosition(support,item,point,snapping,item.supportRatio??1);return mounted?{x:mounted.x,z:mounted.z,y:mounted.y}:null;}
+  if(item.ceilingRoomId){const room=project.entities.find(e=>e.id===item.ceilingRoomId);if(!room)return null;const local=localPoint(room,point.x,point.z),limitX=(room.w-item.w)/2,limitZ=(room.d-item.d)/2;return {...worldPoint(room,Math.max(-limitX,Math.min(limitX,snap(local.x,snapping))),Math.max(-limitZ,Math.min(limitZ,snap(local.z,snapping)))),y:item.y};}
   if(item.hostId){
     const wall=project.entities.find(e=>e.id===item.hostId && e.kind==='wall');
     if(!wall)return null;

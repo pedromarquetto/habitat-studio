@@ -99,3 +99,13 @@ Real geometry uses rounded boxes on furniture and denser cylinders. Wall/roof di
 Exposure and quality are presentation state only. Changes reconfigure lighting without changing saved data or visitor coordinates. Composer, shadow targets, reflection targets and cached environments are disposed during teardown. If postprocessing or reflection allocation throws, direct materials/shadows remain and an explanatory notification appears.
 
 The UI blocks Real on the SVG path with an explicit WebGL requirement. Retry recreates only the viewport/engine, preserving the document, history and browser storage. Heavy rendering code remains dynamically imported by Viewport, and callback proxies use current React state.
+
+## Suggested attachments (v0.6)
+
+`placement.ts` is shared by green previews and committed placement. Picks carry the actual local-floor mesh height and transformed face normal as well as the floor-plane point. Generic wall fixtures use a 2 mm face clearance, full-width/height clamping, optional 5 cm snapping and opening/fixture overlap rejection. `wallMountId` fixes facing to the wall; numeric edits and wall-plane dragging reuse the same helper.
+
+`supportId` and `supportRatio` retain the clicked horizontal furniture surface. Placement clamps the complete rotated footprint to that support. A dependency traversal in `updateEntity` propagates parent translation/rotation/height through nested stacks. Deletion cascades through dependencies; floor duplication remaps references and object duplication includes its descendants. `ceilingRoomId` derives light elevation from enclosing wall heights.
+
+`fitRoof` selects same-floor walls whose centers lie in the drawn footprint, or the walls explicitly named by `roofWallIds`. It derives the axis-aligned rectangular bounds plus `roofOverhang` and seats the local roof base at the highest wall top. Attached roofs refit after wall edits and cannot be dragged away from their supports. Unequal wall heights can leave lower-wall gaps; complex roof contours, structural ridge planning and automatic wall leveling remain future work.
+
+Legacy documents remain version 1: attachment fields are optional, so existing objects are not rewritten on load. Legacy roofs with no stored Y render using the inferred wall-top height. The inspector proposes an explicit updated attachment through ordinary validated history. Cutaway walls/doors retain transparent upper geometry for height context and wall-placement raycasts, while normal selection prefers opaque hits. Furniture normalization makes declared W/H/D and support elevations agree with actual model bounds.

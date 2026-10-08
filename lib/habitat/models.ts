@@ -1,7 +1,7 @@
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import * as THREE from 'three';
 import { lightSettings, switchRoom, circuitRoom } from './lighting';
-import { wallSections, openingBase, type Entity } from './domain';
+import { wallSections, openingBase, fitRoof, type Entity } from './domain';
 
 export function material(color:string,roughness=.8) {return new THREE.MeshStandardMaterial({color,roughness,metalness:.02});}
 export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):THREE.Group {
@@ -31,9 +31,20 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):T
     }
     case 'wall':{
       const height=cutaway?Math.min(e.h,1.1):e.h;
-      for(const s of wallSections(e,entities,height)){
-        const mesh=box(s.x,s.y,0,s.w,s.h,e.d);
-        const edge=new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry),new THREE.LineBasicMaterial({color:'#d1d0c7'}));edge.position.copy(mesh.position);group.add(edge);
+      const edgeMat=new THREE.LineBasicMaterial({color:'#d1d0c7'});
+      for(const section of wallSections(e,entities,height)){
+        const mesh=box(section.x,section.y,0,section.w,section.h,e.d);
+        const edge=new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry),edgeMat);edge.position.copy(mesh.position);group.add(edge);
+      }
+      // Retain the real upper wall as a transparent reference in cutaway view.
+      if(cutaway&&e.h>height){
+        const upper=material(e.color);upper.transparent=true;upper.opacity=.14;upper.depthWrite=false;
+        const outline=new THREE.LineBasicMaterial({color:'#809992',transparent:true,opacity:.32});
+        for(const section of wallSections(e,entities)){
+          const bottom=Math.max(height,section.y-section.h/2),top=section.y+section.h/2;if(top<=bottom)continue;
+          const mesh=box(section.x,(bottom+top)/2,0,section.w,top-bottom,e.d,upper);mesh.userData.cutawayGhost=true;mesh.castShadow=false;
+          const edge=new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry),outline);edge.position.copy(mesh.position);edge.userData.cutawayGhost=true;group.add(edge);
+        }
       }
       break;
     }
@@ -74,28 +85,34 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):T
       for(const x of [-1,1])box(x*(e.w/2-.12),.05,0,.24,.1,e.d,rim);break;
     }
     case 'door': case 'window':{
-      const base=openingBase(e),height=cutaway?Math.min(e.h,Math.max(0,1.1-base)):e.h;
-      if(height<=0)break;
-      box(-e.w/2,base+height/2,0,.06,height,e.d+.06,dark);
-      box(e.w/2,base+height/2,0,.06,height,e.d+.06,dark);
-      if(!cutaway)box(0,base+e.h,0,e.w+.08,.08,e.d+.06,dark);
-      if(e.kind==='window'){
-        box(0,base,0,e.w,.07,e.d+.1,dark);
-        const glass=new THREE.MeshPhysicalMaterial({color:e.color,transparent:true,opacity:.28,roughness:.15,metalness:.15,depthWrite:false});
-        box(0,base+height/2,0,e.w,height,.025,glass);
-        box(0,base+height/2,0,.035,height,.04,dark);
-      }else{
-        // A permanently open leaf makes doorways traversable in this first version.
-        const leaf=box(-e.w/2+(e.w*.14),height/2, e.w*.42,e.w*.3,height*.95,.05);
-        leaf.rotation.y=-Math.PI/2;
+      const base=openingBase(e),solidHeight=cutaway?Math.min(e.h,Math.max(0,1.1-base)):e.h;
+      const ghost=white.clone();ghost.transparent=true;ghost.opacity=.18;ghost.depthWrite=false;
+      const addFrame=(x:number,y:number,z:number,w:number,h:number,d:number,isGhost=false)=>{const mesh=box(x,y,z,w,h,d,isGhost?ghost:white);if(isGhost){mesh.userData.cutawayGhost=true;mesh.castShadow=false;}return mesh;};
+      for(const x of [-e.w/2+.03,e.w/2-.03]){
+        if(solidHeight>0)addFrame(x,base+solidHeight/2,0,.06,solidHeight,e.d+.04);
+        if(e.h>solidHeight)addFrame(x,base+(solidHeight+e.h)/2,0,.06,e.h-solidHeight,e.d+.04,true);
       }
-      break;
+      addFrame(0,base+e.h-.03,0,e.w,.06,e.d+.04,cutaway&&base+e.h>1.1);
+      if(e.kind==='window'){
+        addFrame(0,base+.025,0,e.w,.05,e.d+.06);
+        const glass=new THREE.MeshPhysicalMaterial({color:e.color,transparent:true,opacity:.28,roughness:.15,metalness:.15,depthWrite:false});
+        const pane=box(0,base+e.h/2,0,Math.max(.05,e.w-.12),e.h-.06,.025,glass);pane.castShadow=false;
+        addFrame(0,base+e.h/2,0,.035,e.h,.04,cutaway);
+      }else{
+        const direction=e.doorHinge==='right'?-1:1,side=e.doorSide??1,leafW=e.w-.12,leafH=e.h-.04,pivot=new THREE.Group();pivot.position.set(-direction*(e.w/2-.06),base+.02,0);pivot.rotation.y=-side*direction*Math.PI/2;group.add(pivot);pivot.userData.doorPivot=true;
+        const addLeaf=(bottom:number,top:number,isGhost=false)=>{
+          if(top<=bottom)return;const mesh=box(direction*leafW/2,(bottom+top)/2,0,leafW,top-bottom,.04,isGhost?mat.clone():mat);group.remove(mesh);pivot.add(mesh);mesh.userData.doorLeaf=true;
+          if(isGhost){const m=mesh.material as THREE.MeshStandardMaterial;m.transparent=true;m.opacity=.18;m.depthWrite=false;mesh.userData.cutawayGhost=true;mesh.castShadow=false;}
+        };
+        addLeaf(0,Math.min(leafH,Math.max(0,solidHeight-.02)));if(leafH>solidHeight-.02)addLeaf(Math.max(0,solidHeight-.02),leafH,true);
+        const handle=box(direction*(leafW-.07),Math.min(1.02,leafH*.5),side*.035,.06,.025,.04,dark);group.remove(handle);pivot.add(handle);
+      }
+      const usedGhost=group.children.some(o=>o instanceof THREE.Mesh&&o.material===ghost);if(!usedGhost)ghost.dispose();break;
     }
     case 'roof':{
       const shape=new THREE.Shape();shape.moveTo(-e.w/2,0);shape.lineTo(0,e.h);shape.lineTo(e.w/2,0);shape.closePath();
       const geometry=new THREE.ExtrudeGeometry(shape,{depth:e.d,bevelEnabled:false});
-      const mesh=new THREE.Mesh(geometry,mat);mesh.position.set(0,2.95,-e.d/2);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);
-      break;
+      const mesh=new THREE.Mesh(geometry,mat);mesh.position.set(0,e.y===undefined?(fitRoof({entities},e,false)?.y??0):0,-e.d/2);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);break;
     }
     case 'slab':box(0,e.h/2,0,e.w,e.h,e.d);break;
     case 'pergola':{
@@ -192,6 +209,18 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):T
           for(const x of [-.3,-.1,.1,.3])cylinder(x,.83,.53,.04,.03,dark).rotation.x=Math.PI/2;break;
         case 'sink':box(0,.45,0,.96,.9,.95);box(0,.95,0,1,.1,1,white);box(0,1.006,0,.5,.025,.55,dark);cylinder(.28,1.07,-.25,.025,.2,dark);break;
         case 'toilet':cylinder(0,.25,.08,.33,.45,white);box(0,.65,-.3,.9,.7,.36,white);cylinder(0,.5,.13,.42,.12,mat);break;
+        case 'plantSmall':{
+          cylinder(0,.18,0,.31,.36,white);cylinder(0,.42,0,.035,.6,wood);
+          for(let i=0;i<7;i++){const a=i*2.4,leaf=new THREE.Mesh(new THREE.SphereGeometry(.2,12,8),mat);leaf.position.set(Math.sin(a)*.21,.48+i*.065,Math.cos(a)*.2);leaf.scale.set(.65,1.05,.4);leaf.rotation.z=Math.sin(a)*.6;leaf.castShadow=true;group.add(leaf);}break;
+        }
+        case 'succulent':{
+          cylinder(0,.23,0,.38,.46,white);const leafMat=material('#83a87d');
+          for(let ring=0;ring<2;ring++)for(let i=0;i<7;i++){const a=i*Math.PI*2/7+ring*.4,leaf=new THREE.Mesh(new THREE.SphereGeometry(.22,12,8),ring?leafMat:mat);leaf.scale.set(.6,.65,1.3);leaf.position.set(Math.sin(a)*(.25-ring*.12),.53+ring*.12,Math.cos(a)*(.25-ring*.12));leaf.rotation.y=a;leaf.rotation.x=-.4;leaf.castShadow=true;group.add(leaf);}break;
+        }
+        case 'flowerPot':{
+          cylinder(0,.2,0,.28,.4,white);const petals=material('#c27d98');
+          for(let i=0;i<5;i++){const a=i*2.4,x=Math.sin(a)*.23,z=Math.cos(a)*.23,y=.76+Math.sin(i)*.12;cylinder(x,.54,z,.018,.5,mat);for(let j=0;j<5;j++){const b=j*Math.PI*2/5,flower=new THREE.Mesh(new THREE.SphereGeometry(.105,10,8),petals);flower.scale.set(1,.45,1);flower.position.set(x+Math.sin(b)*.09,y,z+Math.cos(b)*.09);flower.castShadow=true;group.add(flower);}}break;
+        }
         case 'plant':{
           cylinder(0,.17,0,.28,.34,wood);cylinder(0,.45,0,.025,.7,dark);
           for(let i=0;i<9;i++){const angle=i*2.4,mesh=new THREE.Mesh(new THREE.SphereGeometry(.2,10,8),mat);mesh.position.set(Math.sin(angle)*.21,.5+i*.055,Math.cos(angle)*.21);mesh.scale.set(.8,1.35,.65);mesh.rotation.z=Math.sin(angle)*.6;mesh.castShadow=true;group.add(mesh);}break;
@@ -200,7 +229,7 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):T
       }
     }
   }
-  if(e.product){
+  if(e.product||!['wall','room','door','window','roof','stairs','terrain','lawn','paving','fence','gate','pool','slab','pergola','railing','lightSwitch'].includes(e.kind)){
     const bounds=new THREE.Box3().setFromObject(group),size=bounds.getSize(new THREE.Vector3());
     group.scale.multiply(new THREE.Vector3(e.w/Math.max(size.x,.001),e.h/Math.max(size.y,.001),e.d/Math.max(size.z,.001)));
     const normalized=new THREE.Box3().setFromObject(group),offset=normalized.getCenter(new THREE.Vector3());offset.y=normalized.min.y;

@@ -20,12 +20,16 @@ Implemented: per-room power, intensity and color; all-room controls per floor; v
 
 Implemented: local textured physical materials, separate albedo/normal/roughness maps, furniture edge rounding, automatic interior ceilings and door-aware baseboards, shadowed room lights/sun, procedural sky, contact shadows and bloom, per-room reflection probes, Alta/Leve quality, exposure, and honest WebGL availability/retry controls. GPU visual validation remains pending in a hardware-accelerated browser.
 
+## v0.6 — Attachment suggestions
+
+Implemented: wall-mounted appliances/woodwork, furniture-surface support with small plants, wall-derived ceiling heights, fitted rectangular pitched roofs, support propagation/remapping, existing-object suggestions, corrected door pivots and full-height cutaway references.
+
 ## Next iteration
 
 - Improve product-specific visual detail and expand the modular woodwork catalog.
 - Wall endpoints, dimensions, snapping to other geometry and shared-wall merging.
 - Room containment and apartment grouping with batch edits.
-- Floor height and roof attachment that follow the actual wall geometry.
+- Configurable floor-to-floor height, complex roof contours, gable infill and wall leveling for unequal wall heights.
 - Improved spawn placement, movement smoothing, camera positioning, and ceilings/head collision.
 
 ## Later

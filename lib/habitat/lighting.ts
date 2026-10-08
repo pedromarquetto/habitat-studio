@@ -1,5 +1,5 @@
 import { switchMountPosition, type MovePoint } from './switch-mount';
-import { entity, inside, localPoint, worldPoint, updateEntity, type Entity, type Project } from './domain';
+import { ceilingHeight, entity, inside, localPoint, worldPoint, updateEntity, type Entity, type Project } from './domain';
 
 export const lightSettings=(e:Entity)=>e.light??{on:true,intensity:1,color:'#ffd6a3'};
 export const isLitRoom=(e:Entity)=>e.kind==='room'&&e.w>=2&&e.d>=2;
@@ -43,20 +43,20 @@ function switchOnWall(project:Project,wall:Entity,room:Entity,offset:number):Ent
   }
   return null;
 }
-export function attachLightSwitch(project:Project,wallId:string,point:MovePoint,roomId?:string,options:{side?:number;snapping?:boolean}={}){
+export function attachLightSwitch(project:Project,wallId:string,point:MovePoint,roomId?:string,options:{side?:number;snapping?:boolean;item?:Entity}={}){
   const wall=project.entities.find(e=>e.id===wallId&&e.kind==='wall');if(!wall)return null;
   // In plan view choose the adjacent room's face. In 3D use the face actually clicked.
   const rooms=project.entities.filter(e=>e.floorId===wall.floorId&&isLitRoom(e)&&(!roomId||e.id===roomId)).sort((a,b)=>Math.hypot(a.x-point.x,a.z-point.z)-Math.hypot(b.x-point.x,b.z-point.z));
   const adjacent=rooms.find(room=>inside(room,point.x,point.z,.2));
   const side=options.side??(adjacent?Math.sign(localPoint(wall,adjacent.x,adjacent.z).z)||1:undefined);
-  const mount=switchMountPosition(project,wallId,point,{...options,side});if(!mount)return null;
+  const mount=switchMountPosition(project,wallId,point,{...options,side,ignoreId:options.item?.id});if(!mount)return null;
   const room=rooms.find(room=>inside(room,mount.x,mount.z,.05));
-  return entity('lightSwitch',wall.floorId,mount.x,mount.z,{...mount,roomId:room?.id,apartment:room?.apartment??'',name:room?`Interruptor · ${room.name}`:'Interruptor'});
+  return entity('lightSwitch',wall.floorId,mount.x,mount.z,{...options.item,...mount,roomId:room?.id,apartment:options.item?.apartment??room?.apartment??'',name:options.item?.name??(room?`Interruptor · ${room.name}`:'Interruptor')});
 }
 export function installRoomLighting(project:Project,floorId?:string){
   const additions:Entity[]=[];
   for(const room of project.entities.filter(e=>isLitRoom(e)&&(!floorId||e.floorId===floorId))){
-    if(!project.entities.some(e=>e.kind==='ceilingLight'&&circuitRoom(project,e)?.id===room.id))additions.push(entity('ceilingLight',room.floorId,room.x,room.z,{roomId:room.id,apartment:room.apartment,name:`Plafon · ${room.name}`}));
+    if(!project.entities.some(e=>e.kind==='ceilingLight'&&circuitRoom(project,e)?.id===room.id)){const height=ceilingHeight(project.entities,room);additions.push(entity('ceilingLight',room.floorId,room.x,room.z,{roomId:room.id,apartment:room.apartment,name:`Plafon · ${room.name}`,...(height!==null?{y:height-.082,ceilingRoomId:room.id}:{})}));}
     if(project.entities.some(e=>e.kind==='lightSwitch'&&e.roomId===room.id))continue;
     const walls=project.entities.filter(e=>e.kind==='wall'&&e.floorId===room.floorId).sort((a,b)=>{
       const score=(w:Entity)=>{const p=localPoint(w,room.x,room.z),door=project.entities.some(e=>e.kind==='door'&&e.hostId===w.id);return Math.abs(p.z)+Math.max(0,Math.abs(p.x)-w.w/2)*5-(door?.6:0);};return score(a)-score(b);

@@ -164,3 +164,13 @@ The supervised browser has WebGL disabled and opened the SVG renderer. Real now 
 GPU textures, exposure/quality controls, AO, sky reflections, soft shadows and day/night interiors could not be visually verified in this browser. Their source integration and resource lifecycle were reviewed; hardware-accelerated visual QA and mobile/touch performance remain pending. The generated materials and rounded procedural geometry are an improvement in real-time rendering, not a claim of photographic reconstruction.
 
 ![Explicit requirement when WebGL is unavailable](real-webgl-check.jpg)
+
+# v0.6 attachment verification
+
+51 regression tests and TypeScript pass. Seven added cases cover AC placement on both wall faces at four angles, actual clicked elevation and transform tracking; opening/fixture avoidance; small-plant exact bounds and nested furniture supports; ceiling and roof wall-height changes, legacy roof geometry and floor remapping; full-width door hinges and full-height cutaway references; serialization and invalid attachment/cycle rejection; and repositioning coordinates with stable plant/switch identity. Existing walking, opening collision, stairs, lighting, rotation, product import and Real-material tests continue to pass. Production build is checked during publication.
+
+Browser verification used the SVG compatibility renderer with a 6 × 5 m room and 3 m walls. Importing the fixture, framing, selection and the old AC's Apply attachment worked. The AC sat flush at Z=-2.298 m; changing its base from 2.3 to 2.1 m and swapping to the other face gave Z=-2.702 m/180°, then swapping back restored the interior face. A plant placed on the real table surface reported base 0.752 m. Increasing the table height from 0.75 to 0.9 m and duplicating it added both table and plant (10 → 12 objects); undo restored the original count. Flower-pot repositioning was checked at X=2.25, Z=-0.5 m with floor base 0, retaining its identity and project count. Door hinge and opening-side controls were exercised.
+
+Drawing the roof over the room in plan view produced bounds 6.58 × 5.58 m, base 3 m and ridge 4.8 m. With cutaway off it visibly rested on the walls. Editing one support wall to 3.3 m updated the roof base to 3.3 m; undo restored 3 m. Placing a ceiling fixture inside the room produced base 2.918 m/top 3 m, with the Sala circuit. Reloading preserved the Casa · encaixes project with all 13 objects. GPU rendering and physical touch were not exercised; the existing Real-mode WebGL requirement remains.
+
+![Roof fitted to its supporting walls](roof-snap.jpg)

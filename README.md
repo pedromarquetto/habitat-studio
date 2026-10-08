@@ -1,6 +1,6 @@
 # Habitat Studio
 
-Live app: https://habitat-studio.plcm90902.chatgpt.site
+[Open Habitat Studio](https://habitat-studio.plcm90902.chatgpt.site)
 
 A web-based 3D building editor. Draw rooms and walls, furnish individual apartments, create multiple floors, and walk through your own building.
 
@@ -20,6 +20,17 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 - Click-and-drag mouse look, keyboard look, and touch movement controls. Releasing the left mouse button immediately stops turning; the cursor stays available.
 - A compact walking-mode mouse sensitivity slider (25–200%), remembered in the current browser.
 - Automatic lightweight SVG compatibility rendering when WebGL is unavailable. WebGL is the preferred renderer.
+
+## v0.6 — Encaixe sugerido e alturas reais
+
+- **Telhado**: desenhe dois cantos sobre as paredes. A prévia ajusta a base à parede mais alta, calcula os limites com beiral de 20 cm e guarda o vínculo para acompanhar mudanças nas paredes. Telhados antigos sem elevação explícita usam a altura real das paredes ao renderizar; selecione **Aplicar encaixe** para guardar e corrigir também seus limites. O telhado atual usa um retângulo envolvente e duas águas; coberturas com recortes complexos ainda precisam de evolução.
+- **Ar-condicionado, armário aéreo, coifa e painel**: clique na face da parede. A prévia verde usa a mesma posição da colocação final, alinha profundidade e rotação, preserva a altura clicada e evita portas, janelas e outras peças da mesma face. Use **Mover na parede**, elevação, deslocamento e **Trocar face da parede** para ajustes precisos.
+- **Plafon**: clique dentro de um cômodo fechado. A base segue a altura real das paredes do cômodo, sem o antigo valor fixo de 2,70 m. Projetos existentes podem aplicar o encaixe sugerido pelo inspetor.
+- **Planta de mesa, suculenta e vaso com flores**: modelos pequenos, proporcionais às medidas do catálogo. Clique no tampo de uma mesa, bancada ou prateleira para apoiar. O objeto acompanha o móvel quando ele muda de posição, rotação ou altura. O inspetor também sugere apoios próximos para itens já colocados.
+- **Aplicar encaixe** mostra uma sugestão azul para o item selecionado. **Reposicionar com encaixe** permite trocar o apoio com outro clique; Esc cancela. Os vínculos sobrevivem a salvar, exportar, desfazer/refazer e duplicar andares. Duplicar um móvel inclui seus objetos apoiados.
+- Portas têm folha de largura completa, pivô no batente, escolha de dobradiça e lado de abertura. O corte mantém a parte superior transparente e linhas na altura real das paredes/portas, com referência de base/topo no inspetor. Móveis e utensílios respeitam as dimensões e começam na sua base geométrica.
+
+![Telhado encaixado na altura das paredes](docs/roof-snap.jpg)
 
 ## v0.2 — Houses, outdoor areas and product links
 
