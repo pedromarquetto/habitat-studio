@@ -18,7 +18,7 @@ import LocationStatus from './LocationStatus';
 import { EMPTY_CONTEXT, type ContextStatus } from '@/lib/habitat/geography';
 import AttachmentControls from './AttachmentControls';
 import { suggestedPlacement, suggestedAttachment, wallMountPosition, supportPosition } from '@/lib/habitat/placement';
-import { normalizeRealQuality, type RealQuality, type RealPerformanceStatus } from '@/lib/habitat/real-performance';
+import type { RealQuality } from '@/lib/habitat/real-pipeline';
 import type { MaterialStatus } from '@/lib/habitat/real-materials';
 import LightingPanel, { LightControls } from './LightingPanel';
 import { attachLightSwitch, circuitRoom, installRoomLighting, isLitRoom, lightSettings, toggleLight } from '@/lib/habitat/lighting';
@@ -30,7 +30,6 @@ import { DEFAULT_LOOK_SENSITIVITY, normalizeLookSensitivity } from '@/lib/habita
 
 const STORAGE_KEY='habitat-studio:project:v1';
 const LOOK_SETTINGS_KEY='habitat-studio:mouse-sensitivity:v1';
-const REAL_QUALITY_KEY='habitat-studio:real-quality:v1';
 const icons:Record<Kind,ComponentType<{size?:number;strokeWidth?:number;className?:string}>>={wall:Columns3,room:Square,door:DoorOpen,window:AppWindow,roof:House,stairs:Layers3,sofa:Sofa,armchair:Armchair,bed:BedDouble,table:Table2,chair:Armchair,cabinet:Box,fridge:Refrigerator,stove:CookingPot,sink:Bath,toilet:Bath,plant:Leaf,plantSmall:Leaf,succulent:Leaf,flowerPot:Flower2,lamp:Lightbulb,terrain:MapIcon,lawn:Leaf,paving:Grid2X2,fence:Fence,gate:DoorOpen,pool:Waves,tree:Trees,object:Box,slab:Square,pergola:Columns3,railing:Fence,microwave:AppWindow,washingMachine:Waves,dryer:Waves,dishwasher:AppWindow,oven:CookingPot,cooktop:CookingPot,hood:Layers3,airConditioner:AppWindow,baseCabinet:Box,wallCabinet:Box,drawerUnit:SlidersHorizontal,bookshelf:Layers3,wardrobe:Columns3,closetPanel:Columns3,countertop:Square,lightSwitch:SlidersHorizontal,ceilingLight:Lightbulb};
 type DialogMode='building'|'empty'|'help'|'penthouse'|null;
 
@@ -48,8 +47,7 @@ export default function Studio(){
   const [selectedId,setSelectedId]=useState<string|null>(null);
   const [view,setView]=useState<View>('3d');
   const [realMode,setRealMode]=useState(false),[lighting,setLighting]=useState<'day'|'night'>('day');
-  const [realQuality,setRealQuality]=useState<RealQuality>('auto'),[realExposure,setRealExposure]=useState(1);
-  const [realPerformance,setRealPerformance]=useState<RealPerformanceStatus>({quality:'auto',scale:1,fps:null});
+  const [realQuality,setRealQuality]=useState<RealQuality>('high'),[realExposure,setRealExposure]=useState(1);
   const [materialStatus,setMaterialStatus]=useState<MaterialStatus>({state:'loading',loaded:0,total:0});
   const [realUnavailable,setRealUnavailable]=useState(false),[viewportGeneration,setViewportGeneration]=useState(0);
   const pendingReal=useRef(false);
@@ -111,7 +109,6 @@ export default function Studio(){
       try{const raw=localStorage.getItem(STORAGE_KEY);if(raw){const parsed=ProjectSchema.safeParse(JSON.parse(raw));if(parsed.success){projectRef.current=parsed.data;setProject(parsed.data);setFloorId(parsed.data.floors[0].id);}else toast.error('O projeto salvo não pôde ser lido. O exemplo foi aberto.');}}
       catch{toast.error('O armazenamento local não está disponível. Você pode exportar seu projeto.');}
       try{const sensitivity=localStorage.getItem(LOOK_SETTINGS_KEY);if(sensitivity!==null)setLookSensitivity(normalizeLookSensitivity(Number(sensitivity)));}catch{}
-      try{setRealQuality(normalizeRealQuality(localStorage.getItem(REAL_QUALITY_KEY)));}catch{}
       if(window.matchMedia('(max-width:650px)').matches)setLibraryOpen(false);
       if(window.matchMedia('(max-width:1100px)').matches)setInspectorOpen(false);
       loaded.current=true;save();
@@ -251,7 +248,6 @@ export default function Studio(){
 
   const engineState:EngineState=useMemo(()=>({project,floorId,view,realMode,realQuality,realExposure,lighting,isolate,cutaway,grid,selectedId,tool,placing,drawStart,snapping,focusId,rotation,lookSensitivity,placement,suggestion:attachmentSuggestion}),[project,floorId,view,realMode,realQuality,realExposure,lighting,isolate,cutaway,grid,selectedId,tool,placing,drawStart,snapping,focusId,rotation,lookSensitivity,placement,attachmentSuggestion]);
   const changeLookSensitivity=(value:number)=>{const next=normalizeLookSensitivity(value);setLookSensitivity(next);try{localStorage.setItem(LOOK_SETTINGS_KEY,String(next));}catch{}};
-  const changeRealQuality=(value:RealQuality)=>{setRealQuality(value);try{localStorage.setItem(REAL_QUALITY_KEY,value);}catch{}};
   const setEngine=useCallback((engine:HabitatEngine|null)=>{engineRef.current=engine;if(engine&&pendingReal.current){pendingReal.current=false;if(engine.software)setRealUnavailable(true);else{setRealUnavailable(false);setRealMode(true);setView('walk');setTool('select');setDrawStart(null);setRotation(0);}}},[]);
   const toolLabel=tool==='select'?'Selecionar':tool==='move'?'Mover':placement?.name??catalogFor(placing).name;
   const movingName=dragStatus?project.entities.find(e=>e.id===dragStatus.entityId)?.name:'elemento';
@@ -261,7 +257,7 @@ export default function Studio(){
     <Toaster position="bottom-center"/>
     <header className="app-header">
       <div className="brand"><div className="brand-mark"><House size={22}/></div><div><strong>habitat<span>studio</span></strong><small>SEU ESPAÇO, EM 3D</small></div></div>
-      <div className="project-heading"><span className="header-divider"/><Pencil size={14}/><Input aria-label="Nome do projeto" value={project.name} maxLength={120} onChange={e=>{if(e.target.value.trim())commit({...projectRef.current,name:e.target.value});}}/><span className="version-chip">v0.8.1</span></div>
+      <div className="project-heading"><span className="header-divider"/><Pencil size={14}/><Input aria-label="Nome do projeto" value={project.name} maxLength={120} onChange={e=>{if(e.target.value.trim())commit({...projectRef.current,name:e.target.value});}}/><span className="version-chip">v0.8</span></div>
       <div className="header-actions"><Button variant="outline" className="location-open-button" aria-label="Local real" title="Posicionar em um local real" onClick={()=>{engineRef.current?.pauseInput();setLocationOpen(true);}}><MapIcon size={16}/><span>Local real</span></Button><span className={`save-state ${storageError?'warning':''}`} title={storageError||'Salvo apenas neste navegador'}>{saved?<Check size={14}/>:<Save size={14}/>}<span>{storageError?'Exportar para salvar':saved?'Salvo localmente':'Salvando…'}</span></span><Button variant="ghost" size="icon" title="Importar projeto" aria-label="Importar projeto" onClick={()=>importRef.current?.click()}><Upload/></Button><Button variant="outline" className="export-button" aria-label="Exportar projeto" title="Exportar uma cópia do projeto" onClick={exportProject}><Download/><span>Exportar</span></Button><Button variant="ghost" size="icon" title="Ajuda e atalhos" aria-label="Ajuda e atalhos" onClick={()=>{engineRef.current?.pauseInput();setDialog('help');}}><CircleHelp/></Button></div>
       <input type="file" accept=".json,application/json" hidden ref={importRef} onChange={e=>{const file=e.target.files?.[0];if(file)void importProject(file);e.currentTarget.value='';}}/>
     </header>
@@ -286,10 +282,10 @@ export default function Studio(){
           <div className="command-bar-actions"><Button className="open-lighting" variant="ghost" size="sm" title="Luzes e interruptores" onClick={()=>{engineRef.current?.pauseInput();setLightingOpen(true);}}><Lightbulb size={16}/><span>Luzes</span></Button>{view==='walk'&&<Button variant="outline" size="sm" onClick={()=>changeView('3d')}><Pencil size={14}/>Voltar a editar</Button>}</div>
         </div>
         <div className="scene-area">
-          <Viewport key={viewportGeneration} state={engineState} callbacks={{onRealPerformance:setRealPerformance,onContextStatus:setContextStatus,onPlacementHint:setPlacementHint,onRealStatus:setMaterialStatus,onToggleLight,onSwitchTarget:setSwitchTarget,onPick,onHover:setCursor,onLook:setLooking,onError:m=>toast.info(m),onPosition:setPosition,onMove,onRotate,onDragState:setDragStatus}} onEngine={setEngine}/>
+          <Viewport key={viewportGeneration} state={engineState} callbacks={{onContextStatus:setContextStatus,onPlacementHint:setPlacementHint,onRealStatus:setMaterialStatus,onToggleLight,onSwitchTarget:setSwitchTarget,onPick,onHover:setCursor,onLook:setLooking,onError:m=>toast.info(m),onPosition:setPosition,onMove,onRotate,onDragState:setDragStatus}} onEngine={setEngine}/>
           {view!=='walk'&&<div className="scene-navigation"><div className="compass"><span>N</span><div style={{transform:`rotate(${-((project.location?.enabled?project.location.heading:0)??0)}deg)`}}><ArrowUp size={22}/></div></div><div className="zoom-controls"><Button variant="ghost" size="icon" aria-label="Aproximar" onClick={()=>engineRef.current?.zoom(1)}><Plus size={17}/></Button><Button variant="ghost" size="icon" aria-label="Afastar" onClick={()=>engineRef.current?.zoom(-1)}><Minus size={17}/></Button><Button variant="ghost" size="icon" aria-label="Enquadrar projeto" onClick={()=>{setFocusId(null);engineRef.current?.home();}}><Scan size={17}/></Button></div></div>}
           {project.location?.enabled&&<LocationStatus status={contextStatus} walking={view==='walk'} onEdit={()=>{engineRef.current?.pauseInput();setLocationOpen(true);}} onRetry={()=>engineRef.current?.retryContext()} onOverview={()=>{setGrid(false);engineRef.current?.contextOverview();}}/>}
-          {realMode&&<RealControls lighting={lighting} onLighting={setLighting} quality={realQuality} onQuality={changeRealQuality} performance={realPerformance} exposure={realExposure} onExposure={setRealExposure} status={materialStatus} onEdit={()=>changeView('3d')}/>}
+          {realMode&&<RealControls lighting={lighting} onLighting={setLighting} quality={realQuality} onQuality={setRealQuality} exposure={realExposure} onExposure={setRealExposure} status={materialStatus} onEdit={()=>changeView('3d')}/>}
           {view==='walk'&&switchTarget&&<Button className="switch-interaction" onClick={()=>onToggleLight(switchTarget.id)}><Lightbulb size={16}/>{switchTarget.on?'Desligar':'Ligar'} {switchTarget.name}<kbd>E</kbd></Button>}
           {view==='walk'&&<><div className="crosshair" aria-hidden="true"/><div className="walk-message"><Footprints size={21}/><div><strong>{realMode?'Modo real · explorar o projeto':'Você está dentro do projeto'}</strong><span>{looking?'Solte para parar de girar':'Segure e arraste para olhar'}</span></div></div><div className="walk-mouse-settings" role="group" aria-label="Configuração do mouse"><label htmlFor="walk-look-sensitivity"><MousePointer2 size={14}/><span>Sensibilidade</span><output>{Math.round(lookSensitivity*100)}%</output></label><input id="walk-look-sensitivity" type="range" min={25} max={200} step={5} value={Math.round(lookSensitivity*100)} aria-label="Sensibilidade do mouse" aria-valuetext={`${Math.round(lookSensitivity*100)} por cento`} title="Ajuste a velocidade de giro da câmera" onChange={e=>changeLookSensitivity(Number(e.target.value)/100)}/></div><div className="walk-pad"><Button aria-label="Andar para frente" onClick={()=>engineRef.current?.step(1,0)} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);engineRef.current?.setTouchMove(1,0);}} onPointerUp={()=>engineRef.current?.setTouchMove(0,0)} onPointerCancel={()=>engineRef.current?.setTouchMove(0,0)}><ArrowUp/></Button><div>{[[-1,ArrowLeft],[0,ArrowDown],[1,ArrowRight]].map(([dir,Icon])=>{const I=Icon as typeof ArrowLeft;return <Button key={String(dir)} aria-label={dir===-1?'Andar à esquerda':dir===1?'Andar à direita':'Andar para trás'} onClick={()=>engineRef.current?.step(dir===0?-1:0,dir as number)} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);engineRef.current?.setTouchMove(dir===0?-1:0,dir as number);}} onPointerUp={()=>engineRef.current?.setTouchMove(0,0)} onPointerCancel={()=>engineRef.current?.setTouchMove(0,0)}><I/></Button>;})}</div></div></>}
           {view!=='walk'&&placementHint&&<div className={`placement-hint ${placementHint.valid?'valid':'invalid'}`} role="status"><span>{placementHint.valid?'Encaixe sugerido':'Escolha outro apoio'}</span>{placementHint.text}</div>}

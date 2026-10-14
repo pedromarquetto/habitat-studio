@@ -6,15 +6,6 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 
 The screenshots below show earlier versions of the editor.
 
-## v0.8.1 — Modo Real mais leve
-
-- **Automática** é a qualidade inicial. Mantém texturas, materiais físicos, iluminação e sombras; ajusta a resolução durante a caminhada se o ritmo de quadros cair. Recupera nitidez gradualmente quando há margem, sem reagir a uma travada isolada ou ao tempo parado.
-- **Máxima fluidez**, **Leve** e **Alta** também podem ser escolhidas em **Aparência do modo real → Qualidade**. A preferência fica guardada neste navegador. O painel informa a última medição de FPS durante a navegação.
-- Sombras estáticas são reutilizadas e atualizadas quando a construção, o entorno ou as luzes mudam. O modo automático usa seis luzes próximas e até duas sombras de luzes internas, em vez das dezesseis fontes com sombras da versão anterior. Ao mudar de cômodo, as mesmas posições de luz na renderização são reutilizadas.
-- As geometrias arredondadas têm menos vértices nas opções leves, mantendo medidas e limites exatos. Resolução de tela e mapas de sombras têm limites para evitar custo excessivo em monitores grandes ou com DPI alto.
-- Os efeitos de contato, brilho e reflexos locais ficam na opção **Alta**. O código de pós-processamento só é carregado quando solicitado. Reflexos locais são atualizados após uma pausa na caminhada, com intervalo mínimo; o editor pausa os desenhos de novos quadros quando a câmera e a cena ficam paradas ou a aba está oculta.
-- O ganho de FPS varia com a GPU, o navegador e a complexidade do projeto; não foi medido em hardware gráfico nesta sessão.
-
 ## v0.8 — Interface organizada
 
 - Biblioteca com busca em todas as categorias, incluindo nomes e dicas sem exigir acentos. Categorias têm ícones e cartões compactos; importar produtos e começar projetos ficam no rodapé.
