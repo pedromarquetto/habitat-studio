@@ -220,6 +220,8 @@
 .real-controls button { font-size: 11px; }
 .real-settings-body > span { flex-basis: 100%; font-size: 11px; line-height: 1.5; padding: 5px 7px; color: #687e70; }
 .real-quality, .real-exposure { font-size: 11px; }
+.real-performance-note { width: 100%; padding: 4px 7px; margin: 0; color: #687e70; font-size: 11px; line-height: 1.5; }
+.real-performance-note > span { display: block; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .walking .workbench { padding: 12px; }
 .walking .viewport-shell { grid-column: 1; }
 .walk-message, .real-mode .walk-message { left: 50%; top: auto; bottom: 76px; transform: translateX(-50%); padding: 9px 12px; border-radius: 9px; max-width: calc(100% - 460px); gap: 9px; color: #628369; background: #ffffffed; border-color: #d6e5d9; }

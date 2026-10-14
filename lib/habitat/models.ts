@@ -4,7 +4,7 @@ import { lightSettings, switchRoom, circuitRoom } from './lighting';
 import { wallSections, openingBase, fitRoof, type Entity } from './domain';
 
 export function material(color:string,roughness=.8) {return new THREE.MeshStandardMaterial({color,roughness,metalness:.02});}
-export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):THREE.Group {
+export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false,detail:1|2=2):THREE.Group {
   const group=new THREE.Group();group.userData.entityId=e.id;
   const mat=material(e.color);
   const dark=material('#46524e'),white=material('#f2efe7'),wood=material('#956e4e');
@@ -13,11 +13,11 @@ export function makeModel(e:Entity,entities:Entity[],cutaway=false,real=false):T
     const surface=['room','terrain','lawn','paving'].includes(e.kind);
     const architectural=['wall','room','roof','slab','terrain','lawn','paving','pool','stairs','pergola','fence','railing','closetPanel'].includes(e.kind);
     const radius=Math.min(w,h,d)*(['sofa','armchair','bed'].includes(e.kind)?.16:.06);
-    const geometry=real&&!architectural?new RoundedBoxGeometry(w,h,d,Math.min(w,h,d)<.05?1:2,radius):new THREE.BoxGeometry(w,h,d,surface?Math.max(1,Math.ceil(w/2)):1,1,surface?Math.max(1,Math.ceil(d/2)):1);
+    const geometry=real&&!architectural?new RoundedBoxGeometry(w,h,d,Math.min(w,h,d)<.05?1:detail,radius):new THREE.BoxGeometry(w,h,d,surface?Math.max(1,Math.ceil(w/2)):1,1,surface?Math.max(1,Math.ceil(d/2)):1);
     const mesh=new THREE.Mesh(geometry,m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
   };
   const cylinder=(x:number,y:number,z:number,r:number,h:number,m:THREE.Material=mat)=>{
-    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,real?32:18),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
+    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,real&&detail===2?32:18),m);mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);return mesh;
   };
   const legs=(top=.75)=>{for(const x of [-.39,.39])for(const z of [-.36,.36])box(x,top/2,z,.07,top,.07,wood);};
   switch(e.kind){

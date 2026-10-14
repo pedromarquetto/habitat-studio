@@ -192,3 +192,13 @@ The geographic context is derived from provider data and remains separate from e
 61 existing regression tests pass. TypeScript checks the new CatalogPanel, Studio selection/sidebar state, compact geographic details and native Real settings disclosure. Source review checks accessible names for icon-only header controls, preserved tool callbacks and history, category/search behavior, separate project/selection views, floor switching, small-screen panel dismissal and placement/repositioning, reduced-motion handling, and responsive fixed toolbar/panel layouts.
 
 Browser automation is unavailable in this session because the required control-browser skill is not installed. No preview server or substitute browser path was started. The new interface has not been visually verified in a browser; existing screenshots represent previous versions. Production compilation and packaging are checked by the publishing workflow.
+
+# v0.8.1 Real performance
+
+Story: enter Real → resolve the saved presentation quality → build bounded geometry/light/shadow budgets → walk with reused shadow maps and fixed light slots → adjust screen resolution from consecutive active frames → report the latest frame-rate sample in the appearance controls.
+
+Nine new regressions cover default quality and high-DPI/large-screen pixel budgets; gradual automatic reductions and minimum scale; warmup/idle exclusion and recovery hysteresis; fixed manual quality; isolated stalls versus sustained extreme slowness; deferred/reflection cooldown scheduling; current-room and circuit-aware nearby sources without document mutation; fixed light-slot identity, shadow invalidation and shutdown; and lower-detail geometry with exact matching bounds and fewer vertices. Existing walking, stairs, mouse look, circuits, materials, support/attachment, product dimensions and geographic tests remain required.
+
+Source/TypeScript review checks dynamic loading of the high-only compositor, cached per-light/global shadow invalidation after geometry and geographic changes, redraw on camera/model/material changes, hidden-tab suspension, reduced idle React notifications, and preservation of the ordinary editor's live shadows. Automatic changes only alter screen resolution; manual geometry detail remains separate from the saved document and walking coordinates.
+
+No GPU browser/control-browser capability is available in this session. Actual frame-rate improvement, shader compilation, visual shadow/lighting transitions and WebGL resource behavior are not claimed as measured. Automated tests validate rendering policy and Three.js scene objects without a WebGL context; production compilation/packaging is checked during publication.

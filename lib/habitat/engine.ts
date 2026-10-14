@@ -8,10 +8,12 @@ import { MoveGesture, MOVE_HOLD_MS, entityMovePosition } from './object-move';
 import { suggestedPlacement, placementDescription, type PlacementTarget } from './placement';
 import { RotationDial, normalizeRotation } from './object-rotate';
 import { RealMaterials, type MaterialStatus } from './real-materials';
-import { RealPipeline, type RealQuality } from './real-pipeline';
+import type { RealPipeline } from './real-pipeline';
+import { AdaptiveResolution, ReflectionSchedule, realProfile, realPixelRatio, type RealQuality, type RealPerformanceStatus } from './real-performance';
+import { RealLightPool, nearbyLightSources, invalidateShadowMaps } from './real-lights';
 import { roomCeiling, makeCeiling, addWallTrim } from './real-room';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { attachLightSwitch, lightSources, sameWalkGeometry } from './lighting';
+import { attachLightSwitch, lightSources, sameWalkGeometry, type LightSource } from './lighting';
 import type { MovePoint } from './switch-mount';
 import { inside, localPoint, worldPoint } from './domain';
 import { GeographicScene } from './geographic-scene';
@@ -23,7 +25,7 @@ export type { SwitchTarget } from './light-interaction';
 export interface EngineState {project:Project;floorId:string;view:View;realMode:boolean;realQuality:RealQuality;realExposure:number;lighting:'day'|'night';isolate:boolean;cutaway:boolean;grid:boolean;selectedId:string|null;tool:Tool;placing:Kind;drawStart:{x:number;z:number}|null;snapping:boolean;focusId?:string|null;rotation:number;lookSensitivity:number;placement?:Partial<Entity>|null;suggestion?:Entity|null}
 export interface Pick extends PlacementTarget {}
 export interface DragStatus {entityId:string;phase:'holding'|'moving'|'rotating';rotation?:number}
-export interface EngineCallbacks {onContextStatus?:(status:ContextStatus)=>void;onPlacementHint?:(hint:{text:string;valid:boolean}|null)=>void;onRealStatus?:(status:MaterialStatus)=>void;onToggleLight:(id:string)=>void;onSwitchTarget:(target:SwitchTarget|null)=>void;onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:MovePoint)=>boolean;onRotate:(id:string,rotation:number)=>boolean}
+export interface EngineCallbacks {onRealPerformance?:(status:RealPerformanceStatus)=>void;onContextStatus?:(status:ContextStatus)=>void;onPlacementHint?:(hint:{text:string;valid:boolean}|null)=>void;onRealStatus?:(status:MaterialStatus)=>void;onToggleLight:(id:string)=>void;onSwitchTarget:(target:SwitchTarget|null)=>void;onPick:(pick:Pick)=>void;onHover:(point:{x:number;z:number})=>void;onLook:(active:boolean)=>void;onError:(message:string)=>void;onPosition:(position:{x:number;z:number;feet:number})=>void;onDragState:(status:DragStatus|null)=>void;onMove:(id:string,point:MovePoint)=>boolean;onRotate:(id:string,rotation:number)=>boolean}
 
 export class HabitatEngine {
   readonly renderer:THREE.WebGLRenderer|SVGRenderer;
@@ -47,6 +49,9 @@ export class HabitatEngine {
   private rotationRing=document.createElement('div');private rotationHandle=document.createElement('button');
   private realMaterials:RealMaterials;private environments=new Map<string,THREE.WebGLRenderTarget>();
   private sky:Sky|null=null;private pipeline:RealPipeline|null=null;private postFailed=false;private reflectionFailed=false;
+  private pipelineLoading=false;private materialsLoading=false;private resolutionKey='';
+  private realPerformance=new AdaptiveResolution();private reflectionSchedule=new ReflectionSchedule();
+  private lastPresented=0;private lastMotion=0;private lastPerformanceReport=0;private realEnteredAt=0;private targetDirty=true;
   private reflection:THREE.WebGLRenderTarget|null=null;private cubeTarget:THREE.WebGLCubeRenderTarget|null=null;private probeKey:string|null=null;
   private axes:THREE.LineSegments;
   private hemisphere=new THREE.HemisphereLight('#ffffff','#c4c5b5',2.5);
@@ -54,6 +59,7 @@ export class HabitatEngine {
   private lightFloorId:string|null=null;
   private switchPress:{pointerId:number;x:number;y:number;moved:boolean}|null=null;
   private sun=new THREE.DirectionalLight('#fff8e9',3.2);private roomLights=new THREE.Group();
+  private roomLightPool:RealLightPool|null=null;private roomSources:LightSource[]=[];private lightSelectionKey='';private lastLightCheck=0;
   private rotating:{entity:Entity;pointerId:number;dial:RotationDial;rotation:number}|null=null;
   private listeners:{target:EventTarget;name:string;fn:EventListener;capture:boolean}[]=[];
 
@@ -62,9 +68,9 @@ export class HabitatEngine {
     catch{this.renderer=new SVGRenderer();this.software=true;}
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
     this.renderer.setClearColor(new THREE.Color('#e8ede9'),1);
-    if(this.renderer instanceof THREE.WebGLRenderer){this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.4;}
+    if(this.renderer instanceof THREE.WebGLRenderer){this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.4;}
     else this.renderer.setQuality('high');
-    this.realMaterials=new RealMaterials(status=>this.callbacks.onRealStatus?.(status),this.renderer instanceof THREE.WebGLRenderer?Math.min(8,this.renderer.capabilities.getMaxAnisotropy()):1,()=>{this.dirty=true;this.probeKey=null;});
+    this.realMaterials=new RealMaterials(status=>{this.materialsLoading=status.state==='loading';this.callbacks.onRealStatus?.(status);},this.renderer instanceof THREE.WebGLRenderer?Math.min(4,this.renderer.capabilities.getMaxAnisotropy()):1,()=>{this.dirty=true;this.probeKey=null;});
     this.renderer.domElement.setAttribute('data-renderer',this.software?'svg':'webgl');
     this.renderer.domElement.setAttribute('aria-label','Área de edição 3D');this.renderer.domElement.tabIndex=0;
     host.appendChild(this.renderer.domElement);
@@ -80,7 +86,7 @@ export class HabitatEngine {
     this.grid=new THREE.GridHelper(80,80,'#aabeb0','#c6d2c9');this.grid.position.y=-.16;this.scene.add(this.grid);
     const axesPoints=[new THREE.Vector3(-40,-.15,0),new THREE.Vector3(40,-.15,0),new THREE.Vector3(0,-.15,-40),new THREE.Vector3(0,-.15,40)];
     this.axes=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(axesPoints),new THREE.LineBasicMaterial({color:'#99ada3',transparent:true,opacity:.5}));this.scene.add(this.axes);
-    this.geographic=new GeographicScene(this.software,s=>{if(this.state?.view==='walk'&&s.terrain==='real'&&this.player.feet<=.24){this.player.feet=supportHeight(this.state.project,this.player.x,this.player.z,this.player.feet,this.geographic.surface(this.player.x,this.player.z));if(this.geographic.blocked(this.player.x,this.player.z,this.player.feet))this.player=findSpawn(this.state.project,this.state.floorId);}this.callbacks.onContextStatus?.(s);},()=>{this.dirty=true;this.probeKey=null;});
+    this.geographic=new GeographicScene(this.software,s=>{if(this.state?.view==='walk'&&s.terrain==='real'&&this.player.feet<=.24){this.player.feet=supportHeight(this.state.project,this.player.x,this.player.z,this.player.feet,this.geographic.surface(this.player.x,this.player.z));if(this.geographic.blocked(this.player.x,this.player.z,this.player.feet))this.player=findSpawn(this.state.project,this.state.floorId);}this.callbacks.onContextStatus?.(s);},()=>{this.dirty=true;this.probeKey=null;this.invalidateShadows();});
     this.scene.add(this.geographic.group,this.root,this.ghost,this.heightGuide,this.selection);this.selection.visible=false;
     this.camera.position.set(17,18,22);this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.target.set(0,0,0);this.controls.enableDamping=true;this.controls.dampingFactor=.1;this.controls.maxPolarAngle=Math.PI/2-.02;this.controls.minDistance=2;this.controls.maxDistance=400;
     this.planCamera.position.set(0,80,0);this.planCamera.up.set(0,0,-1);this.planCamera.lookAt(0,0,0);this.planControls=new OrbitControls(this.planCamera,this.renderer.domElement);this.planControls.enableRotate=false;this.planControls.mouseButtons.LEFT=THREE.MOUSE.PAN;this.planControls.touches.ONE=THREE.TOUCH.PAN;this.planControls.enableDamping=true;this.planControls.enabled=false;this.planControls.minZoom=.08;this.planControls.maxZoom=12;
@@ -147,25 +153,35 @@ export class HabitatEngine {
     this.listen(document,'wheel',e=>{if(this.rotating){e.preventDefault();e.stopImmediatePropagation();}},true);
     this.listen(document,'keydown',e=>{if((e as KeyboardEvent).key==='Escape'&&this.rotating){e.preventDefault();e.stopImmediatePropagation();this.finishRotation(false);}},true);
     this.listen(window,'blur',()=>{this.finishRotation(false);this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);});
-    this.listen(document,'visibilitychange',()=>{if(document.hidden){this.finishRotation(false);this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);}});
+    this.listen(document,'visibilitychange',()=>{this.realPerformance.pause(performance.now());this.lastPresented=0;this.dirty=true;if(document.hidden){this.finishRotation(false);this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);}});
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
   private listen(target:EventTarget,name:string,fn:EventListener,capture=false){target.addEventListener(name,fn,{capture,passive:false});this.listeners.push({target,name,fn,capture});}
-  private resize(){this.finishRotation(false);this.finishMove(false);const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight);this.renderer.setSize(w,h);this.pipeline?.resize(w,h,this.state?.realQuality??'high');this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const aspect=w/h;this.planCamera.left=-15*aspect;this.planCamera.right=15*aspect;this.planCamera.top=15;this.planCamera.bottom=-15;this.planCamera.updateProjectionMatrix();}
+  private resize(){this.finishRotation(false);this.finishMove(false);const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight);this.applyResolution();this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const aspect=w/h;this.planCamera.left=-15*aspect;this.planCamera.right=15*aspect;this.planCamera.top=15;this.planCamera.bottom=-15;this.planCamera.updateProjectionMatrix();this.dirty=true;this.realPerformance.pause(performance.now());this.lastPresented=0;}
+  private applyResolution(){
+    const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight),s=this.state;
+    const ratio=s?.realMode&&!this.software?realPixelRatio(s.realQuality,w,h,window.devicePixelRatio,this.realPerformance.scale):Math.min(window.devicePixelRatio,2);
+    const key=`${w}:${h}:${ratio}`;if(this.resolutionKey===key)return;this.resolutionKey=key;
+    this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h);this.pipeline?.resize(w,h);
+  }
+  private invalidateShadows(){if(this.renderer instanceof THREE.WebGLRenderer)invalidateShadowMaps(this.renderer.shadowMap,this.scene);}
   private get activeCamera(){return this.state?.view==='plan'?this.planCamera:this.camera;}
   update(next:EngineState){
-    this.dirty=true;
+    this.dirty=true;this.targetDirty=true;
     const previous=this.state;
     const docChanged=previous?.project!==next.project;
     if(this.rotating&&(docChanged||previous?.selectedId!==next.selectedId||previous?.floorId!==next.floorId||previous?.view!==next.view||previous?.tool!==next.tool||previous?.snapping!==next.snapping||previous?.cutaway!==next.cutaway||previous?.isolate!==next.isolate))this.finishRotation(false);
     if(this.moving && (docChanged || previous?.floorId!==next.floorId || previous?.view!==next.view || previous?.tool!==next.tool || previous?.snapping!==next.snapping || previous?.cutaway!==next.cutaway || previous?.isolate!==next.isolate))this.finishMove(false);
-    const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view||previous?.realMode!==next.realMode||previous?.lighting!==next.lighting;
+    const qualityChanged=previous?.realQuality!==next.realQuality;
+    const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view||previous?.realMode!==next.realMode||next.realMode&&qualityChanged&&realProfile(previous?.realQuality??'auto').geometryDetail!==realProfile(next.realQuality).geometryDetail;
     this.state=next;
+    if(previous?.realMode!==next.realMode||qualityChanged){this.realPerformance.reset(next.realQuality,performance.now());this.realEnteredAt=performance.now();this.lastPresented=0;this.reportPerformance(true);}
     this.geographic.update(next.project.location);this.ground.visible=!this.geographic.active&&!this.software;
     const elevation=next.project.floors.find(f=>f.id===next.floorId)?.elevation??0;this.plane.constant=-elevation;
     this.grid.visible=next.grid&&next.view!=='walk';this.grid.position.y=elevation+.012;
     if(renderChanged)this.rebuild();
-    if(renderChanged||previous?.realQuality!==next.realQuality||previous?.realExposure!==next.realExposure)this.configureLighting();
+    if(renderChanged||qualityChanged||previous?.lighting!==next.lighting)this.configureLighting();
+    else if(previous?.realExposure!==next.realExposure&&this.renderer instanceof THREE.WebGLRenderer)this.renderer.toneMappingExposure=(next.lighting==='night'?1.15:.95)*next.realExposure;
     this.restoreControls();
     this.renderer.domElement.style.cursor=this.moveGesture.phase==='moving'?'grabbing':this.moveGesture.phase==='holding'?'progress':next.view==='walk'?(this.look.pointerId!==null?'grabbing':'grab'):next.tool==='select'?'grab':next.tool==='move'?'move':'crosshair';
     if(previous?.view!==next.view){
@@ -193,7 +209,7 @@ export class HabitatEngine {
       const incoming=e.kind==='stairs'&&floor.elevation<activeElevation&&Math.abs(floor.elevation+e.h-activeElevation)<.05;
       if(s.view!=='walk'&&s.isolate&&floor.id!==s.floorId&&!incoming)continue;
       if(['roof','slab'].includes(e.kind)&&(s.view==='plan'||(s.cutaway&&s.view!=='walk')))continue;
-      const model=makeModel(e,s.project.entities,s.view!=='walk'&&s.cutaway&&(s.isolate||e.floorId===s.floorId),s.realMode&&!this.software);
+      const model=makeModel(e,s.project.entities,s.view!=='walk'&&s.cutaway&&(s.isolate||e.floorId===s.floorId),s.realMode&&!this.software,realProfile(s.realQuality).geometryDetail);
       if(s.realMode&&!this.software)addWallTrim(model,e,s.project.entities);
       if(s.realMode)this.realMaterials.apply(model,e);
       if(this.software){const layer=({terrain:-40,lawn:-30,paving:-20} as Partial<Record<Kind,number>>)[e.kind];if(layer!==undefined)model.traverse(o=>{o.renderOrder=layer;});}
@@ -204,7 +220,7 @@ export class HabitatEngine {
       const height=roomCeiling(s.project,room);if(height===null)continue;
       const ceiling=makeCeiling(room,height);this.realMaterials.apply(ceiling,{...room,finish:'paint'});ceiling.position.set(room.x,s.project.floors.find(f=>f.id===room.floorId)!.elevation,room.z);ceiling.rotation.y=room.rotation*Math.PI/180;this.root.add(ceiling);
     }
-    this.root.updateMatrixWorld(true);this.probeKey=null;
+    this.root.updateMatrixWorld(true);this.probeKey=null;this.invalidateShadows();
   }
   private configureLighting(lightFloorId=this.state?.floorId){
     const s=this.state;if(!s||!lightFloorId)return;this.lightFloorId=lightFloorId;
@@ -215,45 +231,61 @@ export class HabitatEngine {
     this.fallbackAmbient.intensity=.55;this.fallbackAmbient.color.setRGB(.35,.35,.35);
     this.sun.intensity=real?(night?.025:3.5):(this.software?.8:3.2);this.sun.color.set(night?'#bacded':'#fff1de');
     if(this.renderer instanceof THREE.WebGLRenderer){
-      const high=s.realQuality==='high',ratio=Math.min(window.devicePixelRatio,real?(high?1.5:1):2);this.renderer.setPixelRatio(ratio);this.renderer.setSize(this.host.clientWidth,this.host.clientHeight);
+      const profile=realProfile(s.realQuality);this.applyResolution();this.renderer.shadowMap.autoUpdate=!real;this.sun.shadow.autoUpdate=!real;
       this.renderer.toneMappingExposure=real?(night?1.15:.95)*s.realExposure:1.4;
       if(real){
         if(!this.sky){this.sky=new Sky();this.sky.scale.setScalar(450);this.sky.frustumCulled=false;this.scene.add(this.sky);}
         this.sky.visible=true;const uniforms=this.sky.material.uniforms;uniforms.turbidity.value=4;uniforms.rayleigh.value=2;uniforms.mieCoefficient.value=.004;uniforms.mieDirectionalG.value=.8;uniforms.sunPosition.value.set(-.5,night?-.35:.65,.7);
         const key=night?'night':'day';if(!this.environments.has(key)){const source=new THREE.Scene();source.add(this.sky.clone());const pmrem=new THREE.PMREMGenerator(this.renderer);this.environments.set(key,pmrem.fromScene(source,.03,.1,1000));pmrem.dispose();}
         this.scene.environment=this.environments.get(key)!.texture;this.scene.environmentIntensity=night?.04:.3;
-        if(!this.pipeline&&!this.postFailed){try{this.pipeline=new RealPipeline(this.renderer,this.scene,this.camera);}catch{this.postFailed=true;this.callbacks.onError('Materiais e sombras ativos. Os efeitos de pós-processamento não estão disponíveis neste navegador.');}}
-        this.pipeline?.resize(this.host.clientWidth,this.host.clientHeight,s.realQuality);
-      }else{if(this.sky)this.sky.visible=false;this.scene.environment=null;}
-      const resolution=real&&high?4096:2048;if(this.sun.shadow.mapSize.x!==resolution){this.sun.shadow.map?.dispose();this.sun.shadow.map=null;this.sun.shadow.mapSize.set(resolution,resolution);}
+        if(profile.postprocessing)this.requestPipeline();else{this.pipeline?.dispose();this.pipeline=null;}
+      }else{if(this.sky)this.sky.visible=false;this.scene.environment=null;this.pipeline?.dispose();this.pipeline=null;}
+      const resolution=real?profile.sunShadow:2048;if(this.sun.shadow.mapSize.x!==resolution){this.sun.shadow.map?.dispose();this.sun.shadow.map=null;this.sun.shadow.mapSize.set(resolution,resolution);}
     }
     const bounds=new THREE.Box3().setFromObject(this.root),center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3());
     const floor=s.project.floors.find(f=>f.id===lightFloorId)!;center.y=floor.elevation+1.4;
     const span=Math.min(45,Math.max(size.x,size.z,14));this.sun.target.position.copy(center);this.sun.position.copy(center).add(new THREE.Vector3(-span*.5,span*.65,span*.7));
     const shadow=this.sun.shadow.camera;shadow.left=shadow.bottom=-span*.7;shadow.right=shadow.top=span*.7;shadow.near=.5;shadow.far=span*4;shadow.updateProjectionMatrix();this.sun.shadow.normalBias=.025;this.sun.shadow.bias=-.00005;
     this.scene.environmentIntensity=real?(night?.04:.3):0;this.probeKey=null;
-    disposeObject(this.roomLights);for(const child of this.roomLights.children)if(child instanceof THREE.SpotLight)child.shadow.dispose();this.roomLights.clear();
-    const sources=lightSources(s.project,lightFloorId),nearest=[...sources].sort((a,b)=>Math.hypot(a.x-this.player.x,a.z-this.player.z)-Math.hypot(b.x-this.player.x,b.z-this.player.z));
-    for(const source of nearest){
-      if(real&&source.on&&source.intensity>0&&this.roomLights.children.filter(o=>o instanceof THREE.SpotLight).length<16){
-        const light=new THREE.SpotLight(source.color,(night?85:55)*source.intensity,14,Math.PI*.46,.55,2);light.position.set(source.x,floor.elevation+source.y-.06,source.z);light.target.position.set(source.x,floor.elevation,source.z);
-        light.castShadow=true;const index=nearest.indexOf(source),resolution=s.realQuality==='high'&&index<4?1024:512;light.shadow.mapSize.set(resolution,resolution);light.shadow.camera.near=.08;light.shadow.camera.far=14;light.shadow.bias=-.00008;light.shadow.normalBias=.018;this.roomLights.add(light,light.target);
-      }
+    this.roomLightPool?.dispose();this.roomLightPool=null;disposeObject(this.roomLights);this.roomLights.clear();
+    const sources=lightSources(s.project,lightFloorId);this.roomSources=sources;this.lightSelectionKey='';
+    if(real){this.roomLightPool=new RealLightPool(realProfile(s.realQuality));this.roomLights.add(this.roomLightPool.group);this.refreshRoomLights();}
+    for(const source of sources){
       if(source.virtual&&(s.view==='walk'||!s.cutaway&&s.view!=='plan')){
         const mat=new THREE.MeshStandardMaterial({color:source.on?'#fff4d5':'#697570',emissive:source.on&&source.intensity>0?source.color:'#000000',emissiveIntensity:source.on?(real?2:.65)*source.intensity:0});
         const fixture=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.06,24),mat);fixture.position.set(source.x,floor.elevation+source.y,source.z);fixture.castShadow=false;this.roomLights.add(fixture);
       }
     }
+    this.invalidateShadows();this.realPerformance.pause(performance.now());this.lastPresented=0;
   }
-  private updateReflectionProbe(){
-    const s=this.state;if(!s?.realMode||s.realQuality!=='high'||this.reflectionFailed||!(this.renderer instanceof THREE.WebGLRenderer))return;
+  private requestPipeline(){
+    if(this.pipeline||this.pipelineLoading||this.postFailed||!(this.renderer instanceof THREE.WebGLRenderer))return;
+    this.pipelineLoading=true;
+    void import('./real-pipeline').then(({RealPipeline})=>{
+      if(this.stopped||!this.state?.realMode||!realProfile(this.state.realQuality).postprocessing||!(this.renderer instanceof THREE.WebGLRenderer))return;
+      this.pipeline=new RealPipeline(this.renderer,this.scene,this.camera);this.pipeline.resize(Math.max(1,this.host.clientWidth),Math.max(1,this.host.clientHeight));this.dirty=true;this.lastPresented=0;
+    }).catch(()=>{if(this.stopped)return;this.postFailed=true;this.callbacks.onError('Materiais e sombras ativos. Os efeitos adicionais não estão disponíveis neste navegador.');}).finally(()=>{this.pipelineLoading=false;});
+  }
+  private refreshRoomLights(){
+    const s=this.state,pool=this.roomLightPool;if(!s||!pool||!this.lightFloorId)return;
     const room=s.project.entities.find(e=>e.kind==='room'&&e.floorId===this.lightFloorId&&inside(e,this.player.x,this.player.z));
-    const key=`${this.lightFloorId}:${room?.id??'outside'}`;if(this.probeKey===key)return;this.probeKey=key;
+    const sources=nearbyLightSources(this.roomSources,this.player,pool.lights.length,room?.id);
+    const floor=s.project.floors.find(f=>f.id===this.lightFloorId)!;
+    if(pool.update(sources,floor.elevation,s.lighting==='night')){this.dirty=true;this.probeKey=null;if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.shadowMap.needsUpdate=true;}
+  }
+  private reportPerformance(force=false,time=performance.now()){
+    const s=this.state;if(!s?.realMode||this.software||!force&&time-this.lastPerformanceReport<1500)return;this.lastPerformanceReport=time;
+    this.callbacks.onRealPerformance?.({quality:s.realQuality,scale:this.realPerformance.scale,fps:this.realPerformance.fps});
+  }
+  private updateReflectionProbe(time:number,moving:boolean){
+    const s=this.state;if(!s?.realMode||!realProfile(s.realQuality).reflections||this.reflectionFailed||!(this.renderer instanceof THREE.WebGLRenderer))return;
+    const room=s.project.entities.find(e=>e.kind==='room'&&e.floorId===this.lightFloorId&&inside(e,this.player.x,this.player.z));
+    const key=`${this.lightFloorId}:${room?.id??'outside'}`;if(!this.reflectionSchedule.ready(time,moving,true,this.probeKey!==key))return;this.probeKey=key;this.reflectionSchedule.captured(time);this.realPerformance.pause(time);this.lastPresented=0;
     try{
     if(!this.cubeTarget)this.cubeTarget=new THREE.WebGLCubeRenderTarget(128,{type:THREE.HalfFloatType});
     const camera=new THREE.CubeCamera(.08,90,this.cubeTarget);camera.position.set(this.player.x,this.player.feet+1.55,this.player.z);
     this.scene.environment=this.environments.get(s.lighting)?.texture??null;camera.update(this.renderer,this.scene);
-    const pmrem=new THREE.PMREMGenerator(this.renderer),next=pmrem.fromCubemap(this.cubeTarget.texture);pmrem.dispose();this.reflection?.dispose();this.reflection=next;this.scene.environment=next.texture;this.scene.environmentIntensity=s.lighting==='night'?.35:.65;
+    const pmrem=new THREE.PMREMGenerator(this.renderer),next=pmrem.fromCubemap(this.cubeTarget.texture);pmrem.dispose();this.reflection?.dispose();this.reflection=next;this.scene.environment=next.texture;this.scene.environmentIntensity=s.lighting==='night'?.35:.65;this.dirty=true;
     }catch{this.reflectionFailed=true;this.renderer.setRenderTarget(null);this.scene.environment=this.environments.get(s.lighting)?.texture??null;this.callbacks.onError('Reflexos locais indisponíveis. Os materiais e as sombras continuam ativos.');}
   }
 
@@ -494,22 +526,46 @@ export class HabitatEngine {
     if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(event.code)){event.preventDefault();if(down)this.keys.add(event.code);else this.keys.delete(event.code);}
   }
   private animate(time:number){
-    if(this.stopped)return;const dt=Math.min((time-this.lastTime)/1000,.05);this.lastTime=time;
+    if(this.stopped)return;
+    const elapsed=time-this.lastTime,dt=Math.min(elapsed/1000,.05);this.lastTime=time;
+    if(document.hidden){this.lastPresented=0;this.frame=requestAnimationFrame(t=>this.animate(t));return;}
+    let moving=false;
     if(this.state?.view==='walk'){
-      this.dirty=true;
       if(this.keys.has('ArrowLeft'))this.yaw+=dt*1.5;if(this.keys.has('ArrowRight'))this.yaw-=dt*1.5;
       if(this.keys.has('ArrowUp'))this.pitch=Math.min(1.3,this.pitch+dt);if(this.keys.has('ArrowDown'))this.pitch=Math.max(-1.3,this.pitch-dt);
       let forward=Number(this.keys.has('KeyW'))-Number(this.keys.has('KeyS'))+this.touchMove.forward;
       let right=Number(this.keys.has('KeyD'))-Number(this.keys.has('KeyA'))+this.touchMove.right;
       const norm=Math.max(1,Math.hypot(forward,right));forward/=norm;right/=norm;
       const speed=(this.keys.has('ShiftLeft')||this.keys.has('ShiftRight')?4.5:2.5)*dt;
-      this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed,this.geographic.active?this.geographic:undefined);
-      if(this.state.realMode){const floor=this.state.project.floors.filter(f=>f.elevation<=this.player.feet+.1).sort((a,b)=>b.elevation-a.elevation)[0];if(floor&&floor.id!==this.lightFloorId)this.configureLighting(floor.id);}
+      if(forward||right)this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed,this.geographic.active?this.geographic:undefined);
+      const cameraMoved=Math.abs(this.camera.position.x-this.player.x)+Math.abs(this.camera.position.y-this.player.feet-1.65)+Math.abs(this.camera.position.z-this.player.z)+Math.abs(this.camera.rotation.y-this.yaw)+Math.abs(this.camera.rotation.x-this.pitch)>1e-8;
+      moving=cameraMoved||this.look.pointerId!==null||Boolean(forward||right);
+      if(cameraMoved){this.dirty=true;this.targetDirty=true;this.lastMotion=time;}
       this.camera.position.set(this.player.x,this.player.feet+1.65,this.player.z);this.camera.rotation.set(this.pitch,this.yaw,0,'YXZ');
-      if(this.state.realMode&&!this.software)this.updateReflectionProbe();
-      if(time-this.lastPositionUpdate>200){this.callbacks.onSwitchTarget(this.switchTarget());this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;}
+      if(this.state.realMode){
+        if(cameraMoved){const floor=this.state.project.floors.filter(f=>f.elevation<=this.player.feet+.1).sort((a,b)=>b.elevation-a.elevation)[0];if(floor&&floor.id!==this.lightFloorId)this.configureLighting(floor.id);}
+        if(time-this.lastLightCheck>350){
+          this.lastLightCheck=time;
+          const room=this.state.project.entities.find(e=>e.kind==='room'&&e.floorId===this.lightFloorId&&inside(e,this.player.x,this.player.z));
+          const key=`${this.lightFloorId}:${Math.floor(this.player.x/2)}:${Math.floor(this.player.z/2)}:${room?.id??''}`;
+          if(this.lightSelectionKey!==key){this.lightSelectionKey=key;this.refreshRoomLights();}
+        }
+        if(!this.software)this.updateReflectionProbe(time,moving||time-this.lastMotion<200);
+      }
+      if(this.targetDirty&&time-this.lastPositionUpdate>200){this.callbacks.onSwitchTarget(this.switchTarget());this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;this.targetDirty=false;}
     }else if(this.moveGesture.phase!=='moving'&&!this.rotating){const orbitChanged=this.controls.update(),planChanged=this.planControls.update();if(orbitChanged||planChanged)this.dirty=true;}
-    if(!this.software||(this.dirty&&time-this.lastRender>66)){this.positionRotationRing();if(this.state?.realMode&&this.pipeline){try{this.pipeline.render();}catch{this.pipeline.dispose();this.pipeline=null;this.postFailed=true;if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.activeCamera);this.callbacks.onError('Efeitos reduzidos para manter a visualização realista neste dispositivo.');}}else this.renderer.render(this.scene,this.activeCamera);this.lastRender=time;this.dirty=false;}
+    if(this.dirty&&(!this.software||time-this.lastRender>66)){
+      this.positionRotationRing();
+      if(this.state?.realMode&&this.pipeline){try{this.pipeline.render();}catch{this.pipeline.dispose();this.pipeline=null;this.postFailed=true;if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.activeCamera);this.callbacks.onError('Efeitos reduzidos para manter a visualização realista neste dispositivo.');}}
+      else this.renderer.render(this.scene,this.activeCamera);
+      this.lastRender=time;this.dirty=false;
+      if(this.state?.realMode&&!this.software){
+        const sampling=this.lastPresented>0&&moving&&!this.pipelineLoading&&(!this.materialsLoading||time-this.realEnteredAt>8000);
+        if(this.realPerformance.sample(time-this.lastPresented,time,sampling)){this.applyResolution();this.dirty=true;this.reportPerformance(true,time);}
+        else this.reportPerformance(false,time);
+        this.lastPresented=time;
+      }
+    }else{this.lastPresented=0;this.realPerformance.sample(0,time,false);}
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
   private endLook(pointerId?:number){
@@ -540,5 +596,5 @@ export class HabitatEngine {
   focus(id:string){this.finishRotation(false);this.finishMove(false);this.dirty=true;const obj=this.objects.get(id);if(!obj||this.state?.view==='walk')return;const box=new THREE.Box3().setFromObject(obj),center=box.getCenter(new THREE.Vector3());this.controls.target.copy(center);const item=this.state?.project.entities.find(e=>e.id===id),wall=this.state?.project.entities.find(e=>e.id===(item?.wallMountId??item?.switchWallId));
     if(item&&wall){const face=worldPoint(wall,0,Math.sign(localPoint(wall,item.x,item.z).z)||1);this.camera.position.copy(center).add(new THREE.Vector3(face.x-wall.x,.12,face.z-wall.z).multiplyScalar(2.8));}
     else this.camera.position.copy(center).add(new THREE.Vector3(8,9,10));this.controls.update();this.planControls.target.set(center.x,center.y,center.z);this.planCamera.position.set(center.x,center.y+80,center.z);this.planCamera.zoom=2;this.planControls.update();this.planCamera.updateProjectionMatrix();}
-  dispose(){this.stopped=true;this.finishRotation(false);this.finishMove(false);this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn,capture} of this.listeners)target.removeEventListener(name,fn,capture);this.controls.dispose();this.planControls.dispose();this.geographic.dispose();disposeObject(this.scene);this.realMaterials.dispose();this.pipeline?.dispose();this.reflection?.dispose();this.cubeTarget?.dispose();for(const target of this.environments.values())target.dispose();this.sun.shadow.dispose();for(const child of this.roomLights.children)if(child instanceof THREE.SpotLight)child.shadow.dispose();if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();this.rotationRing.remove();}
+  dispose(){this.stopped=true;this.finishRotation(false);this.finishMove(false);this.endLook();cancelAnimationFrame(this.frame);this.resizeObserver.disconnect();for(const {target,name,fn,capture} of this.listeners)target.removeEventListener(name,fn,capture);this.controls.dispose();this.planControls.dispose();this.roomLightPool?.dispose();this.geographic.dispose();disposeObject(this.scene);this.realMaterials.dispose();this.pipeline?.dispose();this.reflection?.dispose();this.cubeTarget?.dispose();for(const target of this.environments.values())target.dispose();this.sun.shadow.dispose();for(const child of this.roomLights.children)if(child instanceof THREE.SpotLight)child.shadow.dispose();if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.dispose();this.renderer.domElement.remove();this.rotationRing.remove();}
 }
