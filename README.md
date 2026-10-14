@@ -6,6 +6,13 @@ A web-based 3D building editor. Draw rooms and walls, furnish individual apartme
 
 The screenshots below show earlier versions of the editor.
 
+## v0.8.2 — Desempenho com a aparência original
+
+- O modo Real mantém **Alta** por padrão, com a nitidez, texturas, geometria, reflexos, sombras, iluminação de contato e brilho originais.
+- As sombras das luzes e dos objetos estáticos são reutilizadas durante a caminhada. Editar, mover, girar, mudar as luzes ou carregar o terreno atualiza esse cache.
+- A cena redesenha quando há movimento ou mudanças. Parado e com a aba oculta, o trabalho de renderização é reduzido. Ajustar a exposição não reconstrói as luzes; trocar dia/noite não reconstrói os móveis.
+- Não há redução automática de resolução ou de detalhes. A opção **Leve** continua disponível para escolha manual.
+
 ## v0.8 — Interface organizada
 
 - Biblioteca com busca em todas as categorias, incluindo nomes e dicas sem exigir acentos. Categorias têm ícones e cartões compactos; importar produtos e começar projetos ficam no rodapé.

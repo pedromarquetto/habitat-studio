@@ -9,6 +9,7 @@ import { suggestedPlacement, placementDescription, type PlacementTarget } from '
 import { RotationDial, normalizeRotation } from './object-rotate';
 import { RealMaterials, type MaterialStatus } from './real-materials';
 import { RealPipeline, type RealQuality } from './real-pipeline';
+import { cacheShadowMaps, invalidateShadowMaps } from './render-cache';
 import { roomCeiling, makeCeiling, addWallTrim } from './real-room';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { attachLightSwitch, lightSources, sameWalkGeometry } from './lighting';
@@ -38,6 +39,7 @@ export class HabitatEngine {
   private selection=new THREE.Box3Helper(new THREE.Box3(),new THREE.Color('#3b8f64'));
   private raycaster=new THREE.Raycaster();private mouse=new THREE.Vector2();private plane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
   private resizeObserver:ResizeObserver;private frame=0;private lastTime=0;private lastPositionUpdate=0;private lastRender=0;
+  private resolutionKey='';private targetDirty=true;
   private keys=new Set<string>();private touchMove={forward:0,right:0};private pointerStart={x:0,y:0};private look=new WalkLook();
   private state:EngineState|null=null;private objects=new Map<string,THREE.Group>();
   private player={x:0,z:-9,feet:0};private yaw=0;private pitch=0;private stopped=false;private dirty=true;
@@ -62,7 +64,7 @@ export class HabitatEngine {
     catch{this.renderer=new SVGRenderer();this.software=true;}
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
     this.renderer.setClearColor(new THREE.Color('#e8ede9'),1);
-    if(this.renderer instanceof THREE.WebGLRenderer){this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.4;}
+    if(this.renderer instanceof THREE.WebGLRenderer){this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.4;}
     else this.renderer.setQuality('high');
     this.realMaterials=new RealMaterials(status=>this.callbacks.onRealStatus?.(status),this.renderer instanceof THREE.WebGLRenderer?Math.min(8,this.renderer.capabilities.getMaxAnisotropy()):1,()=>{this.dirty=true;this.probeKey=null;});
     this.renderer.domElement.setAttribute('data-renderer',this.software?'svg':'webgl');
@@ -80,7 +82,7 @@ export class HabitatEngine {
     this.grid=new THREE.GridHelper(80,80,'#aabeb0','#c6d2c9');this.grid.position.y=-.16;this.scene.add(this.grid);
     const axesPoints=[new THREE.Vector3(-40,-.15,0),new THREE.Vector3(40,-.15,0),new THREE.Vector3(0,-.15,-40),new THREE.Vector3(0,-.15,40)];
     this.axes=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(axesPoints),new THREE.LineBasicMaterial({color:'#99ada3',transparent:true,opacity:.5}));this.scene.add(this.axes);
-    this.geographic=new GeographicScene(this.software,s=>{if(this.state?.view==='walk'&&s.terrain==='real'&&this.player.feet<=.24){this.player.feet=supportHeight(this.state.project,this.player.x,this.player.z,this.player.feet,this.geographic.surface(this.player.x,this.player.z));if(this.geographic.blocked(this.player.x,this.player.z,this.player.feet))this.player=findSpawn(this.state.project,this.state.floorId);}this.callbacks.onContextStatus?.(s);},()=>{this.dirty=true;this.probeKey=null;});
+    this.geographic=new GeographicScene(this.software,s=>{if(this.state?.view==='walk'&&s.terrain==='real'&&this.player.feet<=.24){this.player.feet=supportHeight(this.state.project,this.player.x,this.player.z,this.player.feet,this.geographic.surface(this.player.x,this.player.z));if(this.geographic.blocked(this.player.x,this.player.z,this.player.feet))this.player=findSpawn(this.state.project,this.state.floorId);}this.callbacks.onContextStatus?.(s);},()=>{this.dirty=true;this.probeKey=null;this.targetDirty=true;this.invalidateShadows();});
     this.scene.add(this.geographic.group,this.root,this.ghost,this.heightGuide,this.selection);this.selection.visible=false;
     this.camera.position.set(17,18,22);this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.target.set(0,0,0);this.controls.enableDamping=true;this.controls.dampingFactor=.1;this.controls.maxPolarAngle=Math.PI/2-.02;this.controls.minDistance=2;this.controls.maxDistance=400;
     this.planCamera.position.set(0,80,0);this.planCamera.up.set(0,0,-1);this.planCamera.lookAt(0,0,0);this.planControls=new OrbitControls(this.planCamera,this.renderer.domElement);this.planControls.enableRotate=false;this.planControls.mouseButtons.LEFT=THREE.MOUSE.PAN;this.planControls.touches.ONE=THREE.TOUCH.PAN;this.planControls.enableDamping=true;this.planControls.enabled=false;this.planControls.minZoom=.08;this.planControls.maxZoom=12;
@@ -147,25 +149,37 @@ export class HabitatEngine {
     this.listen(document,'wheel',e=>{if(this.rotating){e.preventDefault();e.stopImmediatePropagation();}},true);
     this.listen(document,'keydown',e=>{if((e as KeyboardEvent).key==='Escape'&&this.rotating){e.preventDefault();e.stopImmediatePropagation();this.finishRotation(false);}},true);
     this.listen(window,'blur',()=>{this.finishRotation(false);this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);});
-    this.listen(document,'visibilitychange',()=>{if(document.hidden){this.finishRotation(false);this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);}});
+    this.listen(document,'visibilitychange',()=>{this.dirty=true;this.targetDirty=true;if(document.hidden){this.finishRotation(false);this.keys.clear();this.touchMove={forward:0,right:0};this.endLook();this.finishMove(false);}});
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
   private listen(target:EventTarget,name:string,fn:EventListener,capture=false){target.addEventListener(name,fn,{capture,passive:false});this.listeners.push({target,name,fn,capture});}
-  private resize(){this.finishRotation(false);this.finishMove(false);const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight);this.renderer.setSize(w,h);this.pipeline?.resize(w,h,this.state?.realQuality??'high');this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const aspect=w/h;this.planCamera.left=-15*aspect;this.planCamera.right=15*aspect;this.planCamera.top=15;this.planCamera.bottom=-15;this.planCamera.updateProjectionMatrix();}
+  private resize(){this.finishRotation(false);this.finishMove(false);const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight);this.applyResolution();this.camera.aspect=w/h;this.camera.updateProjectionMatrix();const aspect=w/h;this.planCamera.left=-15*aspect;this.planCamera.right=15*aspect;this.planCamera.top=15;this.planCamera.bottom=-15;this.planCamera.updateProjectionMatrix();this.dirty=true;this.targetDirty=true;}
+  private applyResolution(){
+    const w=Math.max(1,this.host.clientWidth),h=Math.max(1,this.host.clientHeight),s=this.state;
+    const ratio=Math.min(window.devicePixelRatio,s?.realMode&&!this.software?(s.realQuality==='high'?1.5:1):2);
+    const key=`${w}:${h}:${ratio}`;
+    if(this.resolutionKey!==key){this.resolutionKey=key;this.renderer.setPixelRatio(ratio);this.renderer.setSize(w,h);}
+    this.pipeline?.resize(w,h,s?.realQuality??'high');
+  }
+  private invalidateShadows(){if(this.renderer instanceof THREE.WebGLRenderer)invalidateShadowMaps(this.renderer.shadowMap,this.scene);}
+  private configureExposure(){
+    const s=this.state;if(s&&this.renderer instanceof THREE.WebGLRenderer)this.renderer.toneMappingExposure=s.realMode?(s.lighting==='night'?1.15:.95)*s.realExposure:1.4;
+  }
   private get activeCamera(){return this.state?.view==='plan'?this.planCamera:this.camera;}
   update(next:EngineState){
-    this.dirty=true;
+    this.dirty=true;this.targetDirty=true;
     const previous=this.state;
     const docChanged=previous?.project!==next.project;
     if(this.rotating&&(docChanged||previous?.selectedId!==next.selectedId||previous?.floorId!==next.floorId||previous?.view!==next.view||previous?.tool!==next.tool||previous?.snapping!==next.snapping||previous?.cutaway!==next.cutaway||previous?.isolate!==next.isolate))this.finishRotation(false);
     if(this.moving && (docChanged || previous?.floorId!==next.floorId || previous?.view!==next.view || previous?.tool!==next.tool || previous?.snapping!==next.snapping || previous?.cutaway!==next.cutaway || previous?.isolate!==next.isolate))this.finishMove(false);
-    const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view||previous?.realMode!==next.realMode||previous?.lighting!==next.lighting;
+    const renderChanged=docChanged||previous?.floorId!==next.floorId||previous?.isolate!==next.isolate||previous?.cutaway!==next.cutaway||previous?.view!==next.view||previous?.realMode!==next.realMode;
     this.state=next;
     this.geographic.update(next.project.location);this.ground.visible=!this.geographic.active&&!this.software;
     const elevation=next.project.floors.find(f=>f.id===next.floorId)?.elevation??0;this.plane.constant=-elevation;
     this.grid.visible=next.grid&&next.view!=='walk';this.grid.position.y=elevation+.012;
     if(renderChanged)this.rebuild();
-    if(renderChanged||previous?.realQuality!==next.realQuality||previous?.realExposure!==next.realExposure)this.configureLighting();
+    if(renderChanged||previous?.realQuality!==next.realQuality||previous?.lighting!==next.lighting)this.configureLighting();
+    else if(previous?.realExposure!==next.realExposure)this.configureExposure();
     this.restoreControls();
     this.renderer.domElement.style.cursor=this.moveGesture.phase==='moving'?'grabbing':this.moveGesture.phase==='holding'?'progress':next.view==='walk'?(this.look.pointerId!==null?'grabbing':'grab'):next.tool==='select'?'grab':next.tool==='move'?'move':'crosshair';
     if(previous?.view!==next.view){
@@ -204,7 +218,7 @@ export class HabitatEngine {
       const height=roomCeiling(s.project,room);if(height===null)continue;
       const ceiling=makeCeiling(room,height);this.realMaterials.apply(ceiling,{...room,finish:'paint'});ceiling.position.set(room.x,s.project.floors.find(f=>f.id===room.floorId)!.elevation,room.z);ceiling.rotation.y=room.rotation*Math.PI/180;this.root.add(ceiling);
     }
-    this.root.updateMatrixWorld(true);this.probeKey=null;
+    this.root.updateMatrixWorld(true);this.probeKey=null;this.invalidateShadows();
   }
   private configureLighting(lightFloorId=this.state?.floorId){
     const s=this.state;if(!s||!lightFloorId)return;this.lightFloorId=lightFloorId;
@@ -215,15 +229,14 @@ export class HabitatEngine {
     this.fallbackAmbient.intensity=.55;this.fallbackAmbient.color.setRGB(.35,.35,.35);
     this.sun.intensity=real?(night?.025:3.5):(this.software?.8:3.2);this.sun.color.set(night?'#bacded':'#fff1de');
     if(this.renderer instanceof THREE.WebGLRenderer){
-      const high=s.realQuality==='high',ratio=Math.min(window.devicePixelRatio,real?(high?1.5:1):2);this.renderer.setPixelRatio(ratio);this.renderer.setSize(this.host.clientWidth,this.host.clientHeight);
-      this.renderer.toneMappingExposure=real?(night?1.15:.95)*s.realExposure:1.4;
+      const high=s.realQuality==='high';this.applyResolution();this.configureExposure();
       if(real){
         if(!this.sky){this.sky=new Sky();this.sky.scale.setScalar(450);this.sky.frustumCulled=false;this.scene.add(this.sky);}
         this.sky.visible=true;const uniforms=this.sky.material.uniforms;uniforms.turbidity.value=4;uniforms.rayleigh.value=2;uniforms.mieCoefficient.value=.004;uniforms.mieDirectionalG.value=.8;uniforms.sunPosition.value.set(-.5,night?-.35:.65,.7);
         const key=night?'night':'day';if(!this.environments.has(key)){const source=new THREE.Scene();source.add(this.sky.clone());const pmrem=new THREE.PMREMGenerator(this.renderer);this.environments.set(key,pmrem.fromScene(source,.03,.1,1000));pmrem.dispose();}
         this.scene.environment=this.environments.get(key)!.texture;this.scene.environmentIntensity=night?.04:.3;
         if(!this.pipeline&&!this.postFailed){try{this.pipeline=new RealPipeline(this.renderer,this.scene,this.camera);}catch{this.postFailed=true;this.callbacks.onError('Materiais e sombras ativos. Os efeitos de pós-processamento não estão disponíveis neste navegador.');}}
-        this.pipeline?.resize(this.host.clientWidth,this.host.clientHeight,s.realQuality);
+        this.applyResolution();
       }else{if(this.sky)this.sky.visible=false;this.scene.environment=null;}
       const resolution=real&&high?4096:2048;if(this.sun.shadow.mapSize.x!==resolution){this.sun.shadow.map?.dispose();this.sun.shadow.map=null;this.sun.shadow.mapSize.set(resolution,resolution);}
     }
@@ -244,6 +257,7 @@ export class HabitatEngine {
         const fixture=new THREE.Mesh(new THREE.CylinderGeometry(.18,.18,.06,24),mat);fixture.position.set(source.x,floor.elevation+source.y,source.z);fixture.castShadow=false;this.roomLights.add(fixture);
       }
     }
+    if(this.renderer instanceof THREE.WebGLRenderer)cacheShadowMaps(this.renderer.shadowMap,this.scene,real);
   }
   private updateReflectionProbe(){
     const s=this.state;if(!s?.realMode||s.realQuality!=='high'||this.reflectionFailed||!(this.renderer instanceof THREE.WebGLRenderer))return;
@@ -348,7 +362,7 @@ export class HabitatEngine {
       const object=this.objects.get(item.id);if(!object)continue;
       object.position.set(item.x,s.project.floors.find(f=>f.id===item.floorId)!.elevation+(item.y??0),item.z);object.rotation.y=item.rotation*Math.PI/180;
     }
-    this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;
+    this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;this.invalidateShadows();
     this.callbacks.onDragState({entityId:drag.entity.id,phase:'rotating',rotation});
   }
   private finishRotation(commit:boolean){
@@ -415,7 +429,7 @@ export class HabitatEngine {
       model.position.set(host.x,s.project.floors.find(f=>f.id===host.floorId)!.elevation+(host.y??0),host.z);model.rotation.y=host.rotation*Math.PI/180;
       this.root.add(model);this.objects.set(host.id,model);
     }
-    this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;this.callbacks.onHover(point);
+    this.root.updateMatrixWorld(true);this.highlight();this.dirty=true;this.invalidateShadows();this.callbacks.onHover(point);
   }
   private finishMove(commit:boolean){
     const drag=this.moving,active=this.moveGesture.phase==='moving',pointerId=this.moveGesture.pointerId;
@@ -495,21 +509,24 @@ export class HabitatEngine {
   }
   private animate(time:number){
     if(this.stopped)return;const dt=Math.min((time-this.lastTime)/1000,.05);this.lastTime=time;
+    if(document.hidden){this.frame=requestAnimationFrame(t=>this.animate(t));return;}
     if(this.state?.view==='walk'){
-      this.dirty=true;
       if(this.keys.has('ArrowLeft'))this.yaw+=dt*1.5;if(this.keys.has('ArrowRight'))this.yaw-=dt*1.5;
       if(this.keys.has('ArrowUp'))this.pitch=Math.min(1.3,this.pitch+dt);if(this.keys.has('ArrowDown'))this.pitch=Math.max(-1.3,this.pitch-dt);
       let forward=Number(this.keys.has('KeyW'))-Number(this.keys.has('KeyS'))+this.touchMove.forward;
       let right=Number(this.keys.has('KeyD'))-Number(this.keys.has('KeyA'))+this.touchMove.right;
       const norm=Math.max(1,Math.hypot(forward,right));forward/=norm;right/=norm;
       const speed=(this.keys.has('ShiftLeft')||this.keys.has('ShiftRight')?4.5:2.5)*dt;
-      this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed,this.geographic.active?this.geographic:undefined);
-      if(this.state.realMode){const floor=this.state.project.floors.filter(f=>f.elevation<=this.player.feet+.1).sort((a,b)=>b.elevation-a.elevation)[0];if(floor&&floor.id!==this.lightFloorId)this.configureLighting(floor.id);}
+      // Settle support after document/terrain changes, then skip the idle solver.
+      if(forward||right||this.dirty)this.player=movePlayer(this.state.project,this.player,(-Math.sin(this.yaw)*forward+Math.cos(this.yaw)*right)*speed,(-Math.cos(this.yaw)*forward-Math.sin(this.yaw)*right)*speed,this.geographic.active?this.geographic:undefined);
+      const cameraMoved=Math.abs(this.camera.position.x-this.player.x)+Math.abs(this.camera.position.y-this.player.feet-1.65)+Math.abs(this.camera.position.z-this.player.z)+Math.abs(this.camera.rotation.y-this.yaw)+Math.abs(this.camera.rotation.x-this.pitch)>1e-8;
+      if(cameraMoved){this.dirty=true;this.targetDirty=true;}
+      if(this.state.realMode&&this.dirty){const floor=this.state.project.floors.filter(f=>f.elevation<=this.player.feet+.1).sort((a,b)=>b.elevation-a.elevation)[0];if(floor&&floor.id!==this.lightFloorId)this.configureLighting(floor.id);}
       this.camera.position.set(this.player.x,this.player.feet+1.65,this.player.z);this.camera.rotation.set(this.pitch,this.yaw,0,'YXZ');
-      if(this.state.realMode&&!this.software)this.updateReflectionProbe();
-      if(time-this.lastPositionUpdate>200){this.callbacks.onSwitchTarget(this.switchTarget());this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;}
+      if(this.state.realMode&&!this.software&&this.dirty)this.updateReflectionProbe();
+      if(this.targetDirty&&time-this.lastPositionUpdate>200){this.callbacks.onSwitchTarget(this.switchTarget());this.callbacks.onPosition({...this.player});this.lastPositionUpdate=time;this.targetDirty=false;}
     }else if(this.moveGesture.phase!=='moving'&&!this.rotating){const orbitChanged=this.controls.update(),planChanged=this.planControls.update();if(orbitChanged||planChanged)this.dirty=true;}
-    if(!this.software||(this.dirty&&time-this.lastRender>66)){this.positionRotationRing();if(this.state?.realMode&&this.pipeline){try{this.pipeline.render();}catch{this.pipeline.dispose();this.pipeline=null;this.postFailed=true;if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.activeCamera);this.callbacks.onError('Efeitos reduzidos para manter a visualização realista neste dispositivo.');}}else this.renderer.render(this.scene,this.activeCamera);this.lastRender=time;this.dirty=false;}
+    if(this.dirty&&(!this.software||time-this.lastRender>66)){this.positionRotationRing();if(this.state?.realMode&&this.pipeline){try{this.pipeline.render();}catch{this.pipeline.dispose();this.pipeline=null;this.postFailed=true;if(this.renderer instanceof THREE.WebGLRenderer)this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.activeCamera);this.callbacks.onError('Efeitos reduzidos para manter a visualização realista neste dispositivo.');}}else this.renderer.render(this.scene,this.activeCamera);this.lastRender=time;this.dirty=false;}
     this.frame=requestAnimationFrame(t=>this.animate(t));
   }
   private endLook(pointerId?:number){
