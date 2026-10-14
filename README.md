@@ -4,7 +4,16 @@
 
 A web-based 3D building editor. Draw rooms and walls, furnish individual apartments, create multiple floors, and walk through your own building.
 
-![Habitat Studio editor](docs/habitat-studio.jpg)
+The screenshots below show earlier versions of the editor.
+
+## v0.8 — Interface organizada
+
+- Biblioteca com busca em todas as categorias, incluindo nomes e dicas sem exigir acentos. Categorias têm ícones e cartões compactos; importar produtos e começar projetos ficam no rodapé.
+- Ferramentas de seleção, movimento, rotação, histórico, corte de paredes e luzes ficam em uma barra fixa acima do desenho.
+- Seletor de andar e modos 3D, Planta, Caminhar e Real sempre acessíveis no topo. A caminhada tem um botão explícito para voltar à edição.
+- Painel direito separado em **Projeto** e **Propriedades**. Selecionar um objeto abre seus ajustes; andares e cômodos ficam na visão do projeto. Ambos os painéis podem ser recolhidos para ampliar o desenho.
+- Detalhes do entorno e controles de aparência realista podem ser expandidos quando necessários. Atribuição dos mapas permanece visível.
+- Em telas pequenas, os painéis abrem sobre o editor e podem ser fechados pelo fundo ou por Escape. Escolher um item na biblioteca fecha o painel para permitir posicioná-lo. Reposicionar um objeto também libera a área do desenho.
 
 ## Features
 

@@ -39,6 +39,8 @@ Implemented: keyless OSM map selection, geographic project anchor/orientation, l
 
 ## Later
 
+- Visually verify the v0.8 editor shell on desktop, mobile and a GPU-enabled browser; refine spacing from hands-on feedback.
+
 - Import manufacturer-provided GLB/glTF models and associate them with product URLs, then place assets with licensing metadata and asset loading progress.
 - Doors that open/close, balcony and facade components.
 - Project thumbnails and reproducible scene visual regression tests.

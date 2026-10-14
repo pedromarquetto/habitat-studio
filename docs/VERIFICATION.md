@@ -186,3 +186,9 @@ Browser checks used the supervised desktop SVG renderer. The map loaded visible 
 The geographic context is derived from provider data and remains separate from editable objects. Terrain and missing building heights are approximate. GPU Real-mode visuals and physical mobile/touch were not verified in this browser; its existing WebGL requirement remains. Production packaging and deployment are performed by the publishing workflow.
 
 ![Project placed in its real geographic context](real-location.jpg)
+
+# v0.8 editor interface
+
+61 existing regression tests pass. TypeScript checks the new CatalogPanel, Studio selection/sidebar state, compact geographic details and native Real settings disclosure. Source review checks accessible names for icon-only header controls, preserved tool callbacks and history, category/search behavior, separate project/selection views, floor switching, small-screen panel dismissal and placement/repositioning, reduced-motion handling, and responsive fixed toolbar/panel layouts.
+
+Browser automation is unavailable in this session because the required control-browser skill is not installed. No preview server or substitute browser path was started. The new interface has not been visually verified in a browser; existing screenshots represent previous versions. Production compilation and packaging are checked by the publishing workflow.
